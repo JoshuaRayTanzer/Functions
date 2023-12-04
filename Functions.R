@@ -1,0 +1,4155 @@
+
+
+
+check=c("kamila","EnvStats","tidyverse","shiny","shinyMatrix",
+        "shinyRadioMatrix","psych","ggplot2","survival","mice")
+flag=0
+for(p in 1:length(check)){
+  if(check[p]%in%row.names(installed.packages())){
+    flag=flag
+  }else{
+    flag=flag+1
+    blurb=paste("Note: package '",check[p],"' is not currently installed but is required for these functions to run, consider running install.packages('",check[p],"')!",sep="")
+    blurb=data.frame(blurb)
+    colnames(blurb)=NULL
+    row.names(blurb)=c("")
+    print(blurb)
+  }
+}
+
+if(flag==0){
+  library(kamila)
+  library(EnvStats)
+  library(tidyverse)
+  library(shiny)
+  library(shinyMatrix)
+  library(shinyRadioMatrix)
+  library(psych)
+  library(ggplot2)
+  library(survival)
+  library(mice)
+}
+
+
+
+
+#depends on kamila
+
+#con is a matrix of continuous variables
+#cat is a matrix of categorical variables (in the format of cat=data[,c(5,7)] to work with kamila properly)
+#seed is a user defined random number seed
+#K is the number of groups
+#max_it is the maximum number of iterations performed (default to 100)
+#min_it is the minimum number of iterations performed (default to 10)
+#RE_tol is the tolerance for relative efficiency (default to 0.99)
+#LL_tol is the tolerance for log likelihood as a percentage above or below the average (default to 0.05)
+
+Clust_Imp=function(con,
+                   cat,
+                   seed=999,
+                   K,
+                   max_it=100,
+                   min_it=10,
+                   RE_tol=0.99,
+                   LL_tol=0.05){
+  #starting values
+  
+  set.seed(seed)
+  
+  rcon=con
+  rcon=ifelse(is.na(con),1,0)
+  
+  rcat=cat
+  rcat=ifelse(is.na(cat),1,0)
+  
+  
+  con1=matrix(nrow=nrow(con),ncol=ncol(con))
+  for(i in 1:nrow(con)){
+    for(p in 1:ncol(con)){
+      con1[i,p]=ifelse(is.na(con[i,p]),rnorm(1,0,1),con[i,p])
+    }
+  }
+  
+  for(i in 1:nrow(cat)){
+    for(p in 1:ncol(cat)){
+      cat[i,p]=ifelse(is.na(cat[i,p]),rbinom(1,1,mean(cat[,p],na.rm=T)),cat[i,p])
+    }
+  }
+  
+  cat1=cat
+  for(p in 1:ncol(cat)){
+    cat1[,p]=as.factor(cat[,p])
+  }
+  
+  con1=data.frame(con1)
+  cat1=data.frame(cat1)
+  
+  
+  fit0=kamila(con1,cat1,K,numInit=10)
+  
+  fit=fit0
+  
+  #sampler
+  LL=matrix(nrow=max_it,ncol=1)
+  s=1
+  sdone=matrix(nrow=max_it,ncol=1)
+  done1=done2=done3=done=0
+  con_desc_m=matrix(nrow=max_it,ncol=ncol(con))
+  con_desc_sd=matrix(nrow=max_it,ncol=ncol(con))
+  cat_desc_m=matrix(nrow=max_it,ncol=ncol(cat))
+  cat_desc_sd=matrix(nrow=max_it,ncol=ncol(cat))
+  
+  
+  while(done==0){
+    LL[s,]=fit$finalLogLik
+    
+    
+    clust=fit$finalMemb
+    
+    con_k=list()
+    
+    for(k in 1:K){
+      con_k[[k]]=subset(con,clust==k)
+      for(p in 1:ncol(con)){
+        miss=sum(is.na(subset(con,clust==k)[,p]))
+        for(i in 1:nrow(subset(con,clust==k)))
+          if(miss==0){
+            con_k[[k]][i,p]=con[i,p]
+          }else if(sd(subset(con1[,p],clust==k|rcon[,p]==1))==0){
+            con_k[[k]][i,p]=mean(subset(con1[,p],clust==k|rcon[,p]==1))
+          }else{
+            con_k[[k]][i,p]=rnorm(1,mean(subset(con1[,p],clust==k|rcon[,p]==1)),
+                                  sd(subset(con1[,p],clust==k|rcon[,p]==1)))
+          }
+      }
+    }
+    
+    cat_k=list()
+    
+    for(k in 1:K){
+      cat_k[[k]]=subset(cat,clust==k)
+      for(p in 1:ncol(cat)){
+        miss=sum(is.na(subset(cat,clust==k)[,p]))
+        for(i in 1:nrow(subset(cat,clust==k)))
+          if(miss==0){
+            cat_k[[k]][i,p]=cat[i,p]
+          }else{
+            cat_k[[k]][i,p]=rbinom(1,1,mean(subset(con1[,p],clust==k|rcat[,p]==1)))
+          }
+      }
+    }
+    
+    con_i=matrix(nrow=nrow(con),ncol=ncol(con))
+    for(k in 1:K){
+      for(p in 1:ncol(con)){
+        c=1
+        for(i in which(clust==k)){
+          con_i[i,p]=con_k[[k]][c,p]
+          c=c+1
+        }
+      }
+    }
+    
+    for(p in 1:ncol(con)){
+      for(i in 1:nrow(con)){
+        con_i[i,p]=ifelse(is.na(con_i[i,p]),0,con_i[i,p])
+      }
+    }
+    
+    for(p in 1:ncol(con)){
+      for(i in 1:nrow(con)){
+        con_i[i,p]=ifelse(is.na(con[i,p]),con_i[i,p],con[i,p])
+      }
+    }
+    
+    
+    cat_i=matrix(nrow=nrow(cat),ncol=ncol(cat))
+    for(k in 1:K){
+      for(p in 1:ncol(cat)){
+        c=1
+        for(i in which(clust==k)){
+          cat_i[i,p]=cat_k[[k]][c,p]
+          c=c+1
+        }
+      }
+    }
+    
+    for(p in 1:ncol(cat)){
+      for(i in 1:nrow(cat)){
+        cat_i[i,p]=ifelse(is.na(cat[i,p]),cat_i[i,p],cat[i,p])
+      }
+    }
+    
+    
+    cat_i=data.frame(cat_i)
+    
+    for(p in 1:ncol(cat)){
+      cat_i[,p]=as.factor(cat_i[,p])
+    }
+    
+    
+    con_i=data.frame(con_i)
+    cat_i=data.frame(cat_i)
+    
+    fit=kamila(con_i,cat_i,K,numInit=10)
+    
+    #Recording imputations
+    
+    con_s=list()
+    
+    for(p in 1:ncol(con)){
+      con_s[[p]]=matrix(nrow=max_it,ncol=nrow(con))
+    }
+    
+    for(p in 1:ncol(con)){
+      for(i in 1:nrow(con)){
+        con_s[[p]][s,i]=c(con_i[i,p])
+      }
+    }
+    
+    cat_s=list()
+    
+    for(p in 1:ncol(cat)){
+      cat_s[[p]]=matrix(nrow=max_it,ncol=nrow(cat))
+    }
+    
+    cat_int=matrix(nrow=nrow(cat),ncol=ncol(cat))
+    for(p in 1:ncol(cat)){
+      cat_int[,p]=as.numeric(as.character(cat_i[,p]))
+    }
+    
+    for(p in 1:ncol(cat)){
+      for(i in 1:nrow(cat)){
+        cat_s[[p]][s,i]=c(cat_int[i,p])
+      }
+    }
+    
+    #Convergence
+    done1=ifelse(s<min_it,0,1)
+    plot(x=1:s,y=LL[1:s,],type="l",xlab="Iteration",ylab="Log Likelihood")
+    
+    for(p in 1:ncol(con)){
+      con_desc_m[s,p]=mean(con_s[[p]][s,])
+    }
+    for(p in 1:ncol(con)){
+      con_desc_sd[s,p]=sd(con_s[[p]][s,])
+    }
+    
+    for(p in 1:ncol(cat)){
+      cat_desc_m[s,p]=mean(cat_s[[p]][s,])
+    }
+    for(p in 1:ncol(cat)){
+      cat_desc_sd[s,p]=sd(cat_s[[p]][s,])
+    }
+    
+    sdone[s,1]=ifelse(done2==1,sdone[s-1,],s)
+    
+    if(done1==1){
+      
+      Vb=NULL
+      Vw=NULL
+      if((ncol(con)+ncol(cat))==2){
+        Vb=c(sd(con_desc_m[1:s,]),sd(cat_desc_m[1:s,]))
+      }else if(ncol(con)==1){
+        Vb=c(sd(con_desc_m[1:s,]),diag(var(cat_desc_m[1:s,])))
+      }else if(ncol(cat)==1){
+        Vb=c(diag(var(con_desc_m[1:s,])),sd(cat_desc_m[1:s,]))
+      }else{
+        Vb=c(diag(var(con_desc_m[1:s,])),diag(var(cat_desc_m[1:s,])))
+      }
+      
+      if((ncol(con)+ncol(cat))==2){
+        Vw=c(mean(con_desc_sd[1:s,]),mean(cat_desc_sd[1:s,]))
+      }else if(ncol(con)==1){
+        Vw=c(mean(con_desc_sd[1:s,]),colMeans(cat_desc_sd[1:s,]))
+      }else if(ncol(cat)==1){
+        Vw=c(colMeans(con_desc_sd[1:s,]),mean(cat_desc_sd[1:s,]))
+      }else{
+        Vw=c(colMeans(con_desc_sd[1:s,]),colMeans(cat_desc_sd[1:s,]))
+      }
+      Vb=Vb^2
+      Vw=Vw^2
+      df=(s-1)*(1+(Vw/((1+1/s)*Vb)))^2
+      RIV=((1+1/s)*Vb)/Vw
+      FMI=(RIV+(2/(df+3)))/(RIV+1)
+      RE=1/(1+(FMI/s))
+
+      mtext(paste("Critical RE = ",RE_tol,"\n RE = ",round(min(RE),3)),side=3)
+      done2=ifelse(min(RE)<RE_tol,0,1)
+      if(done2==1){
+        done3=ifelse((s-sdone[s,])<min_it,0,1)
+        abline(v=sdone[s,],col="yellow")
+        if(done3==1){
+          abline(v=(sdone[s,]+min_it),col="green")
+          avg=mean(LL[sdone[s,]:s,])
+          ll=mean(LL[sdone[s,]:s,])+qnorm(0.5-LL_tol,0,1)*ifelse(sd(LL[sdone[s,]:s,])==0,sqrt(2*K),sd(LL[sdone[s,]:s,]))
+          ul=mean(LL[sdone[s,]:s,])+qnorm(0.5+LL_tol,0,1)*ifelse(sd(LL[sdone[s,]:s,])==0,sqrt(2*K),sd(LL[sdone[s,]:s,]))
+          abline(h=ll,col="red",lty=2)
+          abline(h=ul,col="red",lty=2)
+          done=ifelse(LL[s,]<ul,ifelse(LL[s,]>ll,1,0),0)
+          if(done==1){
+            plot(x=1:s,y=LL[1:s,],type="l",xlab="Iteration",ylab="Log Likelihood")
+            abline(v=sdone[s,],col="yellow")
+            abline(v=(sdone[s,]+min_it),col="green")
+            abline(h=ll,col="red",lty=2)
+            abline(h=ul,col="red",lty=2)
+            mtext(paste("Critical RE = ",RE_tol,"\n RE = ",round(min(RE),3),"\n Converged!"),side=3)
+            
+          }
+        }
+      }
+    }
+    Clust_Imp=list()
+    Clust_Imp$Ident=fit$finalMemb
+    Con_Imp=matrix(ncol=ncol(con),nrow=nrow(con))
+    for(p in 1:ncol(con)){
+      Con_Imp[,p]=con_s[[p]][s,]
+    }
+    Clust_Imp$Con_Imp=Con_Imp
+    Cat_Imp=matrix(ncol=ncol(cat),nrow=nrow(cat))
+    for(p in 1:ncol(cat)){
+      Cat_Imp[,p]=cat_s[[p]][s,]
+    }
+    Clust_Imp$Cat_Imp=Cat_Imp
+    Clust_Imp$LogLikelihood=LL
+    
+    
+    s=s+1
+  }
+  return(Clust_Imp)
+}
+
+
+
+
+#depends on ggplot2
+#depends on EnvStats
+
+#group is a vector of cluster identities
+
+#data is the raw data to be summarized in the table (no extra data allowed)
+
+#key is a P x 5 key for the data where the first column specifies subsection identity,
+#the second specifies the ordering for subsections,
+#the third specifies the variable names,
+#the fourth specifies the distribution it will be modeled as,
+#the fifth specifies the number of digits to round to,
+
+describe_clust=function(group,data,key,alpha=0.05,bar=NA){
+  
+  dsort=t(t(data)[order(key[,2]),])
+  P=ncol(data)
+  K=length(unique(group))
+  PE=matrix(nrow=P,ncol=K)
+  LL=matrix(nrow=P,ncol=K)
+  UL=matrix(nrow=P,ncol=K)
+  
+  for(k in 1:K){
+    dg=subset(dsort,group==k)
+    for(p in 1:P){
+      if(sd(dg[,p],na.rm=T)==0){
+        if(key[p,4]=="Binomial"|key[p,4]=="binomial"){
+          PE[p,k]=round(mean(dg[,p])*100,as.numeric(key[p,5]))
+          LL[p,k]=round(mean(dg[,p])*100,as.numeric(key[p,5]))
+          UL[p,k]=round(mean(dg[,p])*100,as.numeric(key[p,5]))
+        }else{
+          PE[p,k]=round(mean(dg[,p]),as.numeric(key[p,5]))
+          LL[p,k]=round(mean(dg[,p]),as.numeric(key[p,5]))
+          UL[p,k]=round(mean(dg[,p]),as.numeric(key[p,5]))
+        }
+      }else if(key[p,4]=="Normal"|key[p,4]=="normal"){
+        m=summary(lm(dg[,p]~1))
+        PE[p,k]=round(m$coefficients[,1],as.numeric(key[p,5]))
+        LL[p,k]=round(m$coefficients[,1]-abs(qnorm(alpha/2))*m$coefficients[,2],as.numeric(key[p,5]))
+        UL[p,k]=round(m$coefficients[,1]+abs(qnorm(alpha/2))*m$coefficients[,2],as.numeric(key[p,5]))
+      }else if(key[p,4]=="Binomial"|key[p,4]=="Binomial"){
+        if(min(table(dg[,p]))<2){
+          PE[p,k]=round(mean(dg[,p])*100,as.numeric(key[p,5]))
+          LL[p,k]=round(mean(dg[,p])*100,as.numeric(key[p,5]))
+          UL[p,k]=round(mean(dg[,p])*100,as.numeric(key[p,5]))
+        }else{
+          m=summary(glm(dg[,p]~1,family="binomial"))
+          PEr=m$coefficients[,1]
+          LLr=m$coefficients[,1]-abs(qnorm(alpha/2))*m$coefficients[,2]
+          ULr=m$coefficients[,1]+abs(qnorm(alpha/2))*m$coefficients[,2]
+          PE[p,k]=round(exp(PEr)/(1+exp(PEr))*100,as.numeric(key[p,5]))
+          LL[p,k]=round(exp(LLr)/(1+exp(LLr))*100,as.numeric(key[p,5]))
+          UL[p,k]=round(exp(ULr)/(1+exp(ULr))*100,as.numeric(key[p,5]))
+        }
+      }else if(key[p,4]=="Poisson"|key[p,4]=="poisson"){
+        m=summary(glm(dg[,p]~1,family="poisson"))
+        PEr=m$coefficients[,1]
+        LLr=m$coefficients[,1]-abs(qnorm(alpha/2))*m$coefficients[,2]
+        ULr=m$coefficients[,1]+abs(qnorm(alpha/2))*m$coefficients[,2]
+        PE[p,k]=round(exp(PEr),as.numeric(key[p,5]))
+        LL[p,k]=round(exp(LLr),as.numeric(key[p,5]))
+        UL[p,k]=round(exp(ULr),as.numeric(key[p,5]))
+      }else if(key[p,4]=="Exponential"|key[p,4]=="exponential"){
+        PE[p,k]=round(mean(dg[,p]),as.numeric(key[p,5]))
+        LL[p,k]=round(1/eexp(dg[,p],ci=T)$interval$limits[2],as.numeric(key[p,5]))
+        UL[p,k]=round(1/eexp(dg[,p],ci=T)$interval$limits[1],as.numeric(key[p,5]))
+      }
+    }
+  }
+  
+  ss=length(unique(key[,1]))
+  
+  dist=c(table(as.numeric(key[,2])))
+  
+  sort=1
+  for(s in 1:(ss)){
+    sort=c(sort,sort[s]+dist[s]+1)
+  }
+  
+  
+  table=matrix(ncol=K,nrow=(P+ss+1))
+  namer=matrix(ncol=1,nrow=(P+ss+1))
+  counter=1
+  counts=1
+  for(s in 1:(P+ss+1)){
+    if(s%in%c(sort)){
+      table[s,]=""
+      namer[s,]=unique(key[order(key[,2]),1])[counts]
+      counts=counts+1
+    }else{
+      for(k in 1:K){
+        if(key[counter,4]=="Binomial"|key[counter,4]=="binomial"){
+          table[s,k]=paste(PE[counter,k],"% [",LL[counter,k],"%-",UL[counter,k],"%]",sep="")
+          namer[s,]=c(key[order(key[,2]),3])[counter]
+        }else{
+          table[s,k]=paste(PE[counter,k]," [",LL[counter,k],"-",UL[counter,k],"]",sep="")
+          namer[s,]=key[counter,3]
+        }
+      }
+      counter=counter+1
+    }
+    table[P+ss+1,]=as.vector(table(group))
+    namer[P+ss+1,]="Group Frequencies"
+  }
+  
+  row.names(table)=c(namer)
+  cn=matrix(nrow=1,ncol=K)
+  for(k in 1:K){
+    cn[1,k]=paste("Cluster ",k,sep="")
+  }
+  
+  colnames(table)=c(cn)
+  
+  if(is.na(bar)){}else if(key[bar,4]=="Binomial"|key[bar,4]=="binomial"){
+    bdat=data.frame(
+      name=c(1:K),
+      value=c(PE[bar,]),
+      lower=c(LL[bar,]),
+      upper=c(UL[bar,]))
+    
+    bp=ggplot(bdat)+
+      geom_bar(aes(x=name, y=value), stat="identity", fill="skyblue",alpha=0.5) +
+      geom_errorbar( aes(x=name, ymin=lower, ymax=upper), width=0.4, colour="orange", alpha=0.9, size=1.3)+
+      xlab("Cluster")+
+      ylab(unique(key[order(key[,2]),3])[bar])+
+      ylim(c(0,100))
+    print(bp)
+  }else{
+    bdat=data.frame(
+      name=c(1:K),
+      value=c(PE[bar,]),
+      lower=c(LL[bar,]),
+      upper=c(UL[bar,]))
+    
+    bp=ggplot(bdat)+
+      geom_bar(aes(x=name, y=value), stat="identity", fill="skyblue",alpha=0.5) +
+      geom_errorbar( aes(x=name, ymin=lower, ymax=upper), width=0.4, colour="orange", alpha=0.9, size=1.3)+
+      xlab("Cluster")+
+      ylab(unique(key[order(key[,2]),3])[bar])
+    print(bp)
+  }
+  return(data.frame(table,check.names=F))
+}
+
+
+
+
+#Depends on ggplot2
+
+#mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
+#containing P parameters
+
+#L is a P x k matrix of weight coefficients to make a linear combination of the
+#regression coefficients for creating implied model estimates
+#where k is the number of estimates requested
+
+#diff is a vector of two column numbers from the L matrix,
+#used to calculate the difference between two model estimates
+#in the form of c(1,2) representing the columns being contrasted
+
+#link is the link function for the model, currently supporting:
+#Identity, Logit, and Log
+
+#alpha is a value from 0 to 1 representing the precision
+#for creating confidence intervals (e.g., for 95%, alpha = 0.05)
+
+#beta_raw is an input for a P length vector of model estimates
+#estimated by any software; must be used in conjunction with VCV_raw and N_raw
+
+#VCV_raw is an input for a P x P matrix of model estimate variances and covariances
+#estimated by any software; must be used in conjunction with VCV_raw and N_raw
+
+#N_raw is an input sample size for an input model to calculate degrees of freedom; 
+#must be used in conjunction with VCV_raw and N_raw
+
+#Est_Names is a vector of name labels for each estimate
+
+#plot is either a vector or list object of vectors to generate plots of estimate results;
+#vectors should include the columns in the order they are to be plotted,
+#and a list of multiple vectors will generate multiple plots
+
+#plot_type is a vector of plot types, either line, bar (default),
+#or cox (for survival curves), for each plot requested.
+#Can also be "x_range" to plot a line chart for a range of X value inputs
+#(see x_range input)
+
+#ylab, xlab, and main are inputs for chart axis and title labels
+
+#cumulative is logical for cox regression models,
+#if true the cumulative hazard will be plotted
+
+#rounding is a vector of digits to round to for each plot requested, default is 2
+
+#Print_L is a binary operator, if true the input L matrix with coefficient name labels
+#will be printed to verify proper L matrix specification
+
+#Print_Any is a binary operator, if true the results will be printed
+#(for the purpose of reducing output from reiterative estimates)
+
+#x_range is a vector of two values for the minimum and maximum value
+#for a chosen X variable to estimate the range of values between specified values
+
+#x_effects is a list object specifying which X variable
+#is being used in the x_range input.
+#Each entry must specify in order:
+#1). variable name in regression equation
+#2). the value put in the L matrix when specifying
+#(will be divided out and replaced with each X value within the specified range)
+#3). the power of the coefficient in the regression equation
+#(i.e., 1 if linear, 2 for quadratic, 3 for cubic, and so on)
+
+#x_output
+
+Est_Mod=function(mod=NA,
+                 L,
+                 diff=NA,
+                 link="Identity",
+                 alpha=0.05,
+                 beta_raw=NA,
+                 VCV_raw=NA,
+                 N_raw=NA,
+                 Est_Names=1,
+                 plot=NA,
+                 plot_type="Bar",
+                 ylab=NULL,
+                 xlab=NULL,
+                 main=NULL,
+                 cumulative=F,
+                 ylim=NULL,
+                 xlim=NULL,
+                 rounding=NA,
+                 Print_L=T,
+                 Print_Any=T,
+                 x_range=NULL,
+                 x_effects=NULL,
+                 x_output=NULL,
+                 x_range_breaks=50){
+  if(is.matrix(L)==F){
+    L=as.matrix(L)
+  }
+  
+  if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+    if(is.null(x_range)&is.null(xlim)){
+      print(noquote("Error: x_range must be specified to determine what range of values of X to estimate!"))
+    }else if(is.null(x_range)){
+      x_range=xlim
+    }
+    
+    if(is.null(x_effects)){
+      print(noquote("Error: x_effects must be specified as a list object with each entry containing three inputs: x variable name, value input in the L matrix, and power of the effect (i.e., 1 if linear, 2 if quadratic, and so on)!"))
+    }
+    
+    if(is.list(x_effects)==F){
+      x_effects1=list()
+      x_effects1[[1]]=c(x_effects)
+      x_effects=x_effects1
+    }
+  }
+  
+    
+  L_view=L
+  cox=0
+  na_sum=ifelse(sum(is.na(beta_raw))>0,0,ifelse(is.matrix(beta_raw),1,ifelse(is.vector(beta_raw),1,0)))+
+    ifelse(is.matrix(VCV_raw),1,0)
+  rma_mv=ifelse(na_sum>0,0,ifelse(is.null(mod$vi),0,1))
+  
+  if(na_sum==0){
+    if(sum(is.na(mod))>0&rma_mv==0){
+      print(noquote("Error: Either raw information about beta matrix, variance covariance matrix of estimates, and sample size must be provided; or a fitted model object!"))
+    }
+    s=summary(mod)
+    lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
+    glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
+    cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
+    rma_mv=ifelse(is.null(mod$vi),0,1)
+    glm=ifelse(cox+lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+    
+    if(glmmTMB==1){
+      row.names(L_view)=c(rownames(summary(mod)$coefficients$cond))
+    }else if(rma_mv==1){
+      row.names(L_view)=c(rownames(mod$beta))
+    }else{
+      row.names(L_view)=c(rownames(summary(mod)$coefficients))
+    }
+    if(ncol(L_view)!=length(Est_Names)){
+      colnames(L_view)=c(1:ncol(L))
+    }else{
+      colnames(L_view)=c(Est_Names)
+    }
+    
+    if(glmmTMB==1){
+      beta=summary(mod)$coefficients$cond[,1]
+      Var=matrix(unlist(summary(mod)$vcov),
+                 nrow=length(beta),
+                 ncol=length(beta))
+    }else if(lme4==1){
+      beta=summary(mod)$coefficients[,1]
+      Var=matrix(unlist(summary(mod)$vcov),
+                 nrow=length(beta),
+                 ncol=length(beta))
+    }else if(glm==1){
+      beta=mod$coefficients
+      Var=vcov(mod)
+    }else if(cox==1){
+      beta=mod$coefficients
+      Var=vcov(mod)
+    }else if(rma_mv==1){
+      beta=mod$beta
+      Var=vcov(mod)
+    }else{
+      stop("Model type not currently supported")
+    }
+    
+    if(is.na(N_raw)){
+      if(glmmTMB==1){
+        df=mod$modelInfo$nobs-length(beta)-1
+      }else if(lme4==1){
+        df=length(summary(mod)$residuals)-length(beta)-1
+      }else if(cox==1){
+        df=length(resid(mod))-length(beta)-1
+      }else if(rma_mv==1){
+        df=length(resid(mod))-length(mod$beta)-1
+      }else{
+        df=mod$df.residual
+      }
+    }else{
+      if(glmmTMB==1){
+        df=N_raw-length(beta)-1
+      }else if(lme4==1){
+        df=N_raw-length(beta)-1
+      }else if(cox==1){
+        df=N_rawN_raw-length(beta)-1
+      }else if(rma_mv==1){
+        df=N_raw-length(mod$beta)-1
+      }else{
+        df=N_raw-length(beta)-1
+      }
+    }
+    
+    raw_mod=0
+  }else if(na_sum==2&is.na(N_raw)==F){
+    raw_mod=1
+    beta=beta_raw
+    Var=VCV_raw
+    if(is.null(names(beta))){
+      row.names(L_view)=c(1:length(beta))
+    }else{
+      row.names(L_view)=c(names(beta))
+    }
+    colnames(L_view)=c(1:ncol(L))
+    
+    df=N_raw-length(beta)-1
+    
+  }else{
+    raw_mod=0
+    print(noquote("Error: Either raw information about beta matrix, variance covariance matrix of estimates, and sample size must be provided; or a fitted model object!"))
+  }
+  
+  if(raw_mod==0){
+    coef_nam=c(L_inputs_gen(mod))$Coefficient
+    coef_nam=coef_nam[2:length(coef_nam)]
+    split_text=str_split(coef_nam, ":", simplify = TRUE)
+    x_flag=matrix(0,nrow=nrow(L),ncol=ncol(L))
+    x_coef=L
+  }
+  
+  if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+    for(i in 1:length(x_effects)){
+      for(j in 1:nrow(L)){
+        for(k in 1:ncol(L)){
+          L_view[j,k]=ifelse(x_effects[[i]][1]%in%split_text[j,],
+                             paste(as.numeric(L_view[j,k])/as.numeric(x_effects[[i]][2]),"x",ifelse(x_effects[[i]][3]==1,"",paste("^",x_effects[[i]][3],sep="")),sep=""),
+                             L_view[j,k])
+          x_flag[j,k]=ifelse(x_effects[[i]][1]%in%split_text[j,],as.numeric(x_effects[[i]][3]),x_flag[j,k])
+          x_coef[j,k]=ifelse(x_effects[[i]][1]%in%split_text[j,],
+                             as.numeric(x_coef[j,k])/as.numeric(x_effects[[i]][2]),
+                             x_coef[j,k])
+        }
+      }
+    }
+  }
+  
+  if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+    L_view=noquote(L_view)
+  }
+  
+  blurb="Input L Matrix of Estimates"
+  blurb=data.frame(blurb)
+  colnames(blurb)=NULL
+  row.names(blurb)=c("")
+  
+  print_L=ifelse(Print_Any==F,F,Print_L)
+  
+  if(print_L==T){
+    print(blurb)
+    print(L_view)
+  }
+  
+  
+  if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+    if(is.null(x_output)){
+      x_output=x_range
+    }
+    x_use=seq(x_range[1],x_range[2],length=x_range_breaks)
+    Lp=matrix(nrow=nrow(L),ncol=ncol(L)*x_range_breaks)
+    split_end=NULL
+    p=1
+    for(e in 1:ncol(L)){
+      for(f in 1:x_range_breaks){
+        x_mult=x_use[f]^x_flag[,e]
+        Lp[,p]=x_coef[,e]*x_mult
+        if(f==x_range_breaks){
+          split_end=c(split_end,p)
+        }
+        p=p+1
+      }
+    }
+    L2=matrix(nrow=nrow(L),ncol=ncol(L)*length(x_output))
+    p=1
+    for(e in 1:ncol(L)){
+      for(f in 1:length(x_output)){
+        x_mult=x_output[f]^x_flag[,e]
+        L2[,p]=x_coef[,e]*x_mult
+        p=p+1
+      }
+    }
+    
+  }
+  
+  
+  if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+    L_orig=L
+    L=L2
+    
+    estp=t(Lp)%*%beta
+    sep=sqrt(diag((t(Lp)%*%Var)%*%Lp))
+  }
+  est=t(L)%*%beta
+  se=sqrt(diag((t(L)%*%Var)%*%L))
+  
+  if(alpha>0.999999999|alpha<0.00000000001){
+    blurb="Error: Confidence level must be a value beteween 0 and 1"
+    blurb=data.frame(blurb)
+    colnames(blurb)=NULL
+    row.names(blurb)=c("")
+    print(blurb)
+    
+  }
+  CI_level=1-alpha
+  width=(1-CI_level)/2
+  critical_t=abs(qt(width,df))
+  
+  if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+    LLp=estp-critical_t*sep
+    ULp=estp+critical_t*sep
+  }
+  
+  LL=est-critical_t*se
+  UL=est+critical_t*se
+  if(cox==1){
+    table=rbind(c(est),
+                c(LL),
+                c(UL))
+    
+    table=exp(table)
+    table=data.frame(round(table,2))
+    
+    row.names(table)=c("Point Estimate",
+                       paste((1-alpha)*100,"% CI Lower Limit"),
+                       paste((1-alpha)*100,"% CI Upper Limit"))
+    if(ncol(table)!=length(Est_Names)){
+      colnames(table)=c(1:ncol(L))
+    }else{
+      colnames(table)=c(Est_Names)
+    }
+    
+    if(Print_Any==T){
+      print(noquote(table))
+      blurb="Note: for Cox regression, there is no meaningful interpretation of when all X = 0, for more information see the proportional hazard assumption!"
+      blurb=data.frame(blurb)
+      colnames(blurb)=NULL
+      row.names(blurb)=c("")
+      
+      for(p in 1:length(se)){
+        if(se[p]==0){
+          print(blurb)
+        }
+      }
+      
+    }
+    
+  }else if(link=="Identity"|link=="identity"|link=="Ident"|link=="ident"){
+    table=rbind(c(est),
+                c(se),
+                c(LL),
+                c(UL))
+    
+    table=data.frame(round(table,2))
+    
+    row.names(table)=c("Point Estimate",
+                       "Standard Error",
+                       paste((1-alpha)*100,"% CI Lower Limit"),
+                       paste((1-alpha)*100,"% CI Upper Limit"))
+    
+    if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+      if(ncol(table)/length(x_output)!=length(Est_Names)){
+        colnames(table)=c(1:ncol(L))
+      }else{
+        Est_Nam2=NULL
+        for(i in 1:length(Est_Names)){
+          for(j in 1:length(x_output)){
+            Est_Nam2=c(Est_Nam2,paste(Est_Names[i],", x = ",x_output[j],sep=""))
+          }
+        }
+        colnames(table)=c(Est_Nam2)
+      }
+    }else{
+      if(ncol(table)!=length(Est_Names)){
+        colnames(table)=c(1:ncol(L))
+      }else{
+        colnames(table)=c(Est_Names)
+      }
+    }
+    
+    if(Print_Any==T){
+      print(noquote(table))
+    }
+  }else if(link=="Logit"|link=="logit"){
+    table=rbind(c(est),
+                c(LL),
+                c(UL))
+    
+    table=exp(table)/(1+exp(table))
+    table=data.frame(round(table,2))
+    
+    row.names(table)=c("Point Estimate",
+                       paste((1-alpha)*100,"% CI Lower Limit"),
+                       paste((1-alpha)*100,"% CI Upper Limit"))
+    if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+      if(ncol(table)/length(x_output)!=length(Est_Names)){
+        colnames(table)=c(1:ncol(L))
+      }else{
+        Est_Nam2=NULL
+        count_nam=1
+        for(i in 1:length(Est_Names)){
+          for(j in 1:length(x_output)){
+            Est_Nam2=c(Est_Nam2,paste(Est_Names[i],", x = ",x_output[j],sep=""))
+          }
+        }
+        colnames(table)=c(Est_Nam2)
+      }
+    }else{
+      if(ncol(table)!=length(Est_Names)){
+        colnames(table)=c(1:ncol(L))
+      }else{
+        colnames(table)=c(Est_Names)
+      }
+    }
+    
+    if(Print_Any==T){
+      print(noquote(table))
+    }
+    
+  }else if(link=="Log"|link=="log"){
+    table=rbind(c(est),
+                c(LL),
+                c(UL))
+    
+    table=exp(table)
+    table=data.frame(round(table,2))
+    
+    row.names(table)=c("Point Estimate",
+                       paste((1-alpha)*100,"% CI Lower Limit"),
+                       paste((1-alpha)*100,"% CI Upper Limit"))
+    if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+      if(ncol(table)/length(x_output)!=length(Est_Names)){
+        colnames(table)=c(1:ncol(L))
+      }else{
+        Est_Nam2=NULL
+        count_nam=1
+        for(i in 1:length(Est_Names)){
+          for(j in 1:length(x_output)){
+            Est_Nam2=c(Est_Nam2,paste(Est_Names[i],", x = ",x_output[j],sep=""))
+          }
+        }
+        colnames(table)=c(Est_Nam2)
+      }
+    }else{
+      if(ncol(table)!=length(Est_Names)){
+        colnames(table)=c(1:ncol(L))
+      }else{
+        colnames(table)=c(Est_Names)
+      }
+    }
+    
+    if(Print_Any==T){
+      print(noquote(table))
+    }
+    
+  }
+  
+  flag=sum(ifelse(is.na(diff),0,ifelse(max(diff)>ncol(L),1,0)))
+  
+  if(flag!=0){
+    blurb="Error: To test the difference between two estimates, two column numbers of the L matrix must be specified"
+    blurb=data.frame(blurb)
+    colnames(blurb)=NULL
+    row.names(blurb)=c("")
+    print(blurb)
+  }
+  
+  if(length(diff)==2){
+    L_delta=L[,diff[1]]-L[,diff[2]]
+    est_delta=t(L_delta)%*%beta
+    se_delta=sqrt((t(L_delta)%*%Var)%*%L_delta)
+  }else if(is.na(diff)){""}else{
+    blurb="Error: To test the difference between two estimates, two column numbers of the L matrix must be specified"
+    blurb=data.frame(blurb)
+    colnames(blurb)=NULL
+    row.names(blurb)=c("")
+    print(blurb)
+  }
+  
+  
+  if(length(diff)==2){
+    
+    
+    t=abs(est_delta)/se_delta
+    prob=2*pt(-t,df)
+    if(cox==1){
+      if(ncol(table)!=length(Est_Names)){
+        lab1=paste("estimate ",diff[1],sep="")
+      }else{
+        lab1=paste(Est_Names[diff[1]],sep="")
+      }
+      if(ncol(table)!=length(Est_Names)){
+        lab2=paste("estimate ",diff[2],sep="")
+      }else{
+        lab2=paste(Est_Names[diff[2]],sep="")
+      }
+      
+      blurb=paste("Ratio of ",lab1," and ",lab2,
+                  " = ",round(exp(est_delta),2),", t(",df,") = ",round(t,2),", p ",
+                  ifelse(prob<0.001, "< 0.001",paste("= ",round(prob,3)))
+                  ,sep="")
+      blurb=data.frame(blurb)
+      colnames(blurb)=NULL
+      row.names(blurb)=c("")
+      if(Print_Any==T){
+        if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+          blurb=noquote("Note: test of differences not meaningful for x_range specification because X is a variable!")
+          blurb=data.frame(blurb)
+          colnames(blurb)=NULL
+          row.names(blurb)=c("")
+          
+          print(blurb)
+        }else{
+          print(blurb)
+        }
+      }
+    }else if(link=="Identity"|link=="identity"|link=="Ident"|link=="ident"){
+      if(ncol(table)!=length(Est_Names)){
+        lab1=paste("estimate ",diff[1],sep="")
+      }else{
+        lab1=paste(Est_Names[diff[1]],sep="")
+      }
+      if(ncol(table)!=length(Est_Names)){
+        lab2=paste("estimate ",diff[2],sep="")
+      }else{
+        lab2=paste(Est_Names[diff[2]],sep="")
+      }
+      
+      
+      blurb=paste("Difference between ",lab1," and ",lab2,
+                  " = ",round(est_delta,2),", t(",df,") = ",round(t,2),", p ",
+                  ifelse(prob<0.001, "< 0.001",paste("= ",round(prob,3)))
+                  ,sep="")
+      blurb=data.frame(blurb)
+      colnames(blurb)=NULL
+      row.names(blurb)=c("")
+      if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+        blurb=noquote("Note: test of differences not meaningful for x_range specification because X is a variable!")
+        blurb=data.frame(blurb)
+        colnames(blurb)=NULL
+        row.names(blurb)=c("")
+        
+        print(blurb)
+      }else{
+        print(blurb)
+      }
+    }else{
+      if(ncol(table)!=length(Est_Names)){
+        lab1=paste("estimate ",diff[1],sep="")
+      }else{
+        lab1=paste(Est_Names[diff[1]],sep="")
+      }
+      if(ncol(table)!=length(Est_Names)){
+        lab2=paste("estimate ",diff[2],sep="")
+      }else{
+        lab2=paste(Est_Names[diff[2]],sep="")
+      }
+      
+      blurb=paste("Ratio of ",lab1," and ",lab2,
+                  " = ",round(exp(est_delta),2),", t(",df,") = ",round(t,2),", p ",
+                  ifelse(prob<0.001, "< 0.001",paste("= ",round(prob,3)))
+                  ,sep="")
+      blurb=data.frame(blurb)
+      colnames(blurb)=NULL
+      row.names(blurb)=c("")
+      if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+        blurb=noquote("Note: test of differences not meaningful for x_range specification because X is a variable!")
+        blurb=data.frame(blurb)
+        colnames(blurb)=NULL
+        row.names(blurb)=c("")
+        
+        print(blurb)
+      }else{
+        print(blurb)
+      }
+    }
+  }
+  if(length(diff)==2){
+    if(cox==1){
+      out=list(L_view,mod,link,alpha,c(est),c(se),c(LL),c(UL),
+               c(exp(est)),c(exp(LL)),c(exp(UL)),
+               c(diff),c(est_delta),c(t),c(df),c(prob))
+      names(out)=c("L_Matrix","Model","Link","Alpha","Estimates","SE","LL","UL",
+                   "Estimates_Inv","LL_Inv","UL_Inv",
+                   "Comparison","Difference","t","DF","p")
+    }else if(link=="Identity"|link=="identity"|link=="Ident"|link=="ident"){
+      out=list(L_view,mod,link,alpha,c(est),c(se),c(LL),c(UL),
+               c(diff),c(est_delta),c(t),c(df),c(prob))
+      names(out)=c("L_Matrix","Model","Link","Alpha","Estimates","SE","LL","UL",
+                   "Comparison","Difference","t","DF","p")
+    }else if(link=="Logit"|link=="logit"){
+      out=list(L_view,mod,link,alpha,c(est),c(se),c(LL),c(UL),
+               c(exp(est)/(1+exp(est))),c(exp(LL)/(1+exp(LL))),c(exp(UL)/(1+exp(UL))),
+               c(diff),c(est_delta),c(t),c(df),c(prob))
+      names(out)=c("L_Matrix","Model","Link","Alpha","Estimates","SE","LL","UL",
+                   "Estimates_Inv","LL_Inv","UL_Inv",
+                   "Comparison","Difference","t","DF","p")
+    }else{
+      out=list(L_view,mod,link,alpha,c(est),c(se),c(LL),c(UL),
+               c(exp(est)),c(exp(LL)),c(exp(UL)),
+               c(diff),c(est_delta),c(t),c(df),c(prob))
+      names(out)=c("L_Matrix","Model","Link","Alpha","Estimates","SE","LL","UL",
+                   "Estimates_Inv","LL_Inv","UL_Inv",
+                   "Comparison","Difference","t","DF","p")
+    }
+  }else{
+    if(link=="Identity"|link=="identity"|link=="Ident"|link=="ident"){
+      out=list(L_view,mod,link,alpha,c(est),c(se),c(LL),c(UL))
+      names(out)=c("L_Matrix","Model","Link","Alpha","Estimates","SE","LL","UL")
+    }else if(link=="Logit"|link=="logit"){
+      out=list(L_view,mod,link,alpha,c(est),c(se),c(LL),c(UL),
+               c(exp(est)/(1+exp(est))),c(exp(LL)/(1+exp(LL))),c(exp(UL)/(1+exp(UL))))
+      names(out)=c("L_Matrix","Model","Link","Alpha","Estimates","SE","LL","UL",
+                   "Estimates_Inv","LL_Inv","UL_Inv")
+    }else{
+      out=list(L_view,mod,link,alpha,c(est),c(se),c(LL),c(UL),
+               c(exp(est)),c(exp(LL)),c(exp(UL)))
+      names(out)=c("L_Matrix","Model","Link","Alpha","Estimates","SE","LL","UL",
+                   "Estimates_Inv","LL_Inv","UL_Inv")
+    }
+  }
+  
+  if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+    out$x_range_Estimates=c(estp)
+    out$x_range_SE=c(sep)
+    out$x_range_LL=c(LLp)
+    out$x_range_UL=c(ULp)
+    out$x_range_X=rep(x_use,ncol(L_orig))
+    group_id=NULL
+    if(ncol(L_orig)!=length(Est_Names)){
+      for(i in 1:ncol(L_orig)){
+        group_id=c(group_id,rep(paste("Estimate",i),x_range_breaks))
+      }
+    }else{
+      for(i in 1:ncol(L_orig)){
+        group_id=c(group_id,rep(Est_Names[i],x_range_breaks))
+      }
+    }
+    out$x_range_Group_ID=group_id
+    
+    if(link=="Log"|link=="log"){
+      out$x_range_Estimates_Inv=c(exp(estp))
+      out$x_range_LL_Inv=c(exp(LLp))
+      out$x_range_UL_Inv=c(exp(ULp))
+    }else if(link=="Logit"|link=="logit"){
+      out$x_range_Estimates_Inv=c(exp(estp)/(1+exp(estp)))
+      out$x_range_LL_Inv=c(exp(LLp)/(1+exp(LLp)))
+      out$x_range_UL_Inv=c(exp(ULp)/(1+exp(ULp)))
+    }
+    
+  }
+  
+  if(is.list(plot)|is.numeric(plot)){
+    if(is.list(plot)==F){
+      plot=list(plot)
+    }
+    
+    if(is.list(xlab)==F){
+      xlab=replicate(length(plot),xlab,simplify=FALSE)
+    }
+    
+    if(is.list(ylab)==F){
+      ylab=replicate(length(plot),ylab,simplify=FALSE)
+    }
+    
+    if(is.list(main)==F){
+      main=replicate(length(plot),main,simplify=FALSE)
+    }
+    
+    if(is.list(xlim)==F){
+      xlim=replicate(length(plot),xlim,simplify=FALSE)
+    }
+    
+    if(is.list(ylim)==F){
+      ylim=replicate(length(plot),ylim,simplify=FALSE)
+    }
+    
+    if(length(plot_type)!=length(plot)){
+      plot_type=rep(plot_type,length(plot))
+    }
+    
+    if(length(xlab)!=length(plot)){
+      xlab=rep(xlab,length(plot))
+    }
+    
+    if(length(ylab)!=length(plot)){
+      ylab=rep(ylab,length(plot))
+    }
+    
+    if(length(main)!=length(plot)){
+      main=rep(main,length(plot))
+    }
+    
+    for(p in 1:length(plot)){
+      if(is.na(rounding[p])){
+        round_p=2
+      }else{
+        round_p=rounding[p]
+      }
+      
+      if(plot_type[p]=="cox"|plot_type[p]=="Cox"){
+        
+        X=model.frame(mod)[,2:ncol(model.frame(mod))]
+        if("(cluster)"%in%names(X)){
+          clust=X$`(cluster)`
+          clust_present=1
+        }else{
+          clust_present=0
+        }
+        X=X[,names(X)!=("(cluster)")]
+        
+        coef_nam=c(rownames(summary(mod)$coefficients))
+        split_text=str_split(coef_nam, ":", simplify = TRUE)
+        split_bin=ifelse(split_text=="",0,1)
+        
+        var_nam=c(names(model.frame(mod)[2:ncol(model.frame(mod))]))
+        
+        split_2=split_text
+        for(i in 1:nrow(split_text)){
+          for(j in 1:ncol(split_text)){
+            for(k in 1:length(var_nam)){
+              if(split_2[i,j]==""){
+                split_2[i,j]=""
+              }else{
+                split_2[i,j]=ifelse(grepl(var_nam[k],split_2[i,j])==T,
+                                    ifelse(var_nam[k]==split_2[i,j],split_2[i,j],
+                                           gsub(var_nam[k],'',split_2[i,j])),split_2[i,j])
+              }
+            }
+          }
+        }
+        
+        reg2=matrix(nrow=nrow(split_2),ncol=1)
+        X2=matrix(nrow=nrow(X),ncol=nrow(split_2))
+        X3=matrix(1,nrow=nrow(X),ncol=nrow(split_2))
+        for(q in 1:nrow(split_2)){
+          hold=c(split_2[q,])
+          hold2=ifelse(hold=="",NA,hold)
+          hold3=hold2[complete.cases(hold2)]
+          hold4=NULL
+          if(length(hold3)==1){
+            reg2[q,]=hold3
+            if(hold3%in%var_nam){
+              X2[,q]=X[,names(X)==hold3]
+            }else{
+              flag=0
+              for(i in 1:length(var_nam)){
+                flag=ifelse(grepl(var_nam[i],split_text[q,1]),i,flag)
+              }
+              X2[,q]=ifelse(X[,names(X)==var_nam[flag]]==hold3,1,0)
+            }
+          }else{
+            for(i in 1:length(hold3)){
+              if(i==length(hold3)){
+                hold4=c(hold4,paste(hold4[i-1],hold3[i],sep=""))
+              }else{
+                hold4=c(hold4,paste(hold3[i],"_",sep=""))
+              }
+            }
+            reg2[q,]=hold4[i]
+          }
+        }
+        
+        count=ifelse(clust_present==1,length(var_nam)-1,length(var_nam))
+        
+        for(q in 1:ncol(X2)){
+          if(rowSums(split_bin)[q]==1){
+            X2[,q]=X2[,q]
+          }else{
+            X2[,q]=1
+            for(i in 1:count){
+              if(grepl(reg2[i,],reg2[q,])==T){
+                X2[,q]=X2[,q]*X2[,i]
+              }
+            }
+          }
+        }
+        
+        time=model.frame(mod)[,1][,1]
+        event=model.frame(mod)[,1][,2]
+        
+        X2=cbind(X2,time,event)
+        
+        if(clust_present==1){
+          X2=cbind(X2,clust)
+          namer=c(reg2,"time","event","Clust")
+        }else{
+          namer=c(reg2,"time","event")
+        }
+        X2=data.frame(X2)
+        colnames(X2)=c(namer)
+        
+        
+        for(q in 1:nrow(reg2)){
+          if(q==1){
+            line=paste("Surv(time,event)~",reg2[q,],sep="")
+          }else if(q==nrow(reg2)){
+            if(clust_present==1){
+              line=paste(line,"+",reg2[q,],"+cluster(Clust)",sep="")
+            }else{
+              line=paste(line,"+",reg2[q,],sep="")
+            }
+          }else{
+            line=paste(line,"+",reg2[q,],sep="")
+          }
+        }
+        
+        out_mod=coxph(formula(line),data=X2)
+        
+        
+        
+        n_dat=t(L[,plot[[p]]])
+        n_dat=data.frame(n_dat)
+        colnames(n_dat)=c(reg2)
+        
+        y1=survfit(out_mod,newdata=n_dat)$surv
+        ll1=survfit(out_mod,newdata=n_dat)$lower
+        ul1=survfit(out_mod,newdata=n_dat)$upper
+        time1=survfit(out_mod,newdata=n_dat)$time
+        
+        
+        if(cumulative==T){
+          y1=1-y1
+          ll1=1-ll1
+          ul1=1-ul1
+        }
+        
+        y=NULL
+        ll=NULL
+        ul=NULL
+        grp_names=NULL
+        time=NULL
+        
+        for(q in 1:length(plot[[p]])){
+          y=c(y,y1[,q])
+          ll=c(ll,ll1[,q])
+          ul=c(ul,ul1[,q])
+          time=c(time,time1)
+          if(ncol(table)!=length(Est_Names)){
+            grp_names=c(grp_names,rep(paste("Estimate ",plot[[p]][q],sep=""),nrow(y1)))
+          }else{
+            grp_names=c(grp_names,rep(Est_Names[plot[[p]]][q],nrow(y1)))
+          }
+        }
+        
+        gg_inf=data.frame(y,ll,ul,grp_names,time)
+        names(gg_inf)=c("y","ll","ul","Group","Time")
+        gg_inf$Group=factor(gg_inf$Group,levels=unique(as.character(gg_inf$Group)))
+        
+      }else if(link=="Identity"|link=="identity"|link=="Ident"|link=="ident"){
+        if(plot_type[p]=="X_Range"|plot_type[p]=="x_range"|plot_type[p]=="X_range"|plot_type[p]=="x_Range"){
+          want=c(plot[[p]])
+          keep=NULL
+          for(i in 1:length(want)){
+            keep=c(keep,1:x_range_breaks+x_range_breaks*(want[i]-1)) 
+          }
+          
+          y=estp[keep]
+          ll=LLp[keep]
+          ul=ULp[keep]
+        }else{
+          y=out$Estimates[c(plot[[p]])]
+          ll=out$LL[c(plot[[p]])]
+          ul=out$UL[c(plot[[p]])]
+        }
+        if(plot_type[p]=="X_Range"|plot_type[p]=="x_range"|plot_type[p]=="X_range"|plot_type[p]=="x_Range"){
+          if(ncol(L_orig)!=length(Est_Names)){
+            grp_names=paste("Estimate ",plot[[p]],sep="")
+          }else{
+            grp_names=Est_Names[plot[[p]]]
+          }
+        }else if(ncol(table)!=length(Est_Names)){
+          grp_names=paste("Estimate ",plot[[p]],sep="")
+        }else{
+          grp_names=Est_Names[plot[[p]]]
+        }
+        if(plot_type[p]=="X_Range"|plot_type[p]=="x_range"|plot_type[p]=="X_range"|plot_type[p]=="x_Range"){
+          grp_names2=NULL
+          for(i in 1:length(plot[[p]])){
+            grp_names2=c(grp_names2,rep(grp_names[i],x_range_breaks))
+          }
+          grp_names=grp_names2
+          X=rep(seq(x_range[1],x_range[2],length=x_range_breaks),length(plot[[p]]))
+          gg_inf=data.frame(cbind(y,ll,ul,grp_names,X))
+        }else{
+          gg_inf=data.frame(cbind(y,ll,ul,grp_names))
+        }
+        gg_inf$grp_names=factor(gg_inf$grp_names,levels=unique(as.character(gg_inf$grp_names)))
+        
+      }else{
+        if(plot_type[p]=="X_Range"|plot_type[p]=="x_range"|plot_type[p]=="X_range"|plot_type[p]=="x_Range"){
+          if(link=="Logit"|link=="logit"){
+            want=c(plot[[p]])
+            keep=NULL
+            for(i in 1:length(want)){
+              keep=c(keep,1:x_range_breaks+x_range_breaks*(want[i]-1)) 
+            }
+            
+            y=estp[keep]
+            ll=LLp[keep]
+            ul=ULp[keep]
+            
+            y=exp(y)/(1+exp(y))
+            ll=exp(ll)/(1+exp(ll))
+            ul=exp(ul)/(1+exp(ul))
+          }else{
+            want=c(plot[[p]])
+            keep=NULL
+            for(i in 1:length(want)){
+              keep=c(keep,1:x_range_breaks+x_range_breaks*(want[i]-1)) 
+            }
+            
+            y=estp[keep]
+            ll=LLp[keep]
+            ul=ULp[keep]
+            
+            y=exp(y)
+            ll=exp(ll)
+            ul=exp(ul)
+          }
+        }else{
+          y=out$Estimates_Inv[c(plot[[p]])]
+          ll=out$LL_Inv[c(plot[[p]])]
+          ul=out$UL_Inv[c(plot[[p]])]
+        }
+        if(plot_type[p]=="X_Range"|plot_type[p]=="x_range"|plot_type[p]=="X_range"|plot_type[p]=="x_Range"){
+          if(ncol(L_orig)!=length(Est_Names)){
+            grp_names=paste("Estimate ",plot[[p]],sep="")
+          }else{
+            grp_names=Est_Names[plot[[p]]]
+          }
+        }else if(ncol(table)!=length(Est_Names)){
+          grp_names=paste("Estimate ",plot[[p]],sep="")
+        }else{
+          grp_names=Est_Names[plot[[p]]]
+        }
+        if(plot_type[p]=="X_Range"|plot_type[p]=="x_range"|plot_type[p]=="X_range"|plot_type[p]=="x_Range"){
+          grp_names2=NULL
+          for(i in 1:length(plot[[p]])){
+            grp_names2=c(grp_names2,rep(grp_names[i],x_range_breaks))
+          }
+          grp_names=grp_names2
+          X=rep(x_use,length(grp_names))
+          gg_inf=data.frame(cbind(y,ll,ul,grp_names,X))
+        }else{
+          gg_inf=data.frame(cbind(y,ll,ul,grp_names))
+        }
+        gg_inf$grp_names=factor(gg_inf$grp_names,levels=unique(as.character(gg_inf$grp_names)))
+      }
+      if(plot_type[p]=="cox"|plot_type[p]=="Cox"){
+        if(is.null(main[[p]])){
+          if(is.null(ylab[[p]])){
+            ylab[[p]]="%"
+          }
+          if(is.null(xlab[[p]])){
+            xlab[[p]]="Time to Event"
+          }
+          if(is.null(xlim[[p]])){
+            if(is.null(ylim[[p]])){
+              h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group))+
+                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,coluor=NA)+
+                geom_line(aes(x=Time,y=y))+
+                xlab(xlab[[p]])+
+                ylab(ylab[[p]])+
+                ylim(0,1)+ 
+                scale_fill_grey()
+            }else{
+              h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group))+
+                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour=NA)+
+                geom_line(aes(x=Time,y=y))+
+                xlab(xlab[[p]])+
+                ylab(ylab[[p]])+
+                ylim(ylim[[p]])+ 
+                scale_fill_grey()
+            }
+          }else{
+            if(is.null(ylim[[p]])){
+              h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group))+
+                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour=NA)+
+                geom_line(aes(x=Time,y=y))+
+                xlab(xlab[[p]])+
+                ylab(ylab[[p]])+
+                ylim(0,1)+
+                xlim(xlim[[p]])+ 
+                scale_fill_grey()
+            }else{
+              h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group))+
+                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour=NA)+
+                geom_line(aes(x=Time,y=y))+
+                xlab(xlab[[p]])+
+                ylab(ylab[[p]])+
+                ylim(ylim[[p]])+
+                xlim(xlim[[p]])+ 
+                scale_fill_grey()
+            }
+          }
+        }else{
+          if(is.null(xlim[[p]])){
+            h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group,col=Group,fill=Group))+
+              geom_ribbon(aes(x=Time,ymin=ll,ymax=ul),alpha=0.3)+
+              geom_line(aes(x=Time,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ggtitle(main[[p]])+
+              ylim(0,1)
+          }else{
+            h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group,col=Group,fill=Group))+
+              geom_ribbon(aes(x=Time,ymin=ll,ymax=ul),alpha=0.3)+
+              geom_line(aes(x=Time,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ggtitle(main[[p]])+
+              ylim(0,1)+
+              xlim(xlim[[p]])
+          }
+        }
+        print(h)
+      }else if(plot_type[p]=="Line"|plot_type[p]=="line"|plot_type[p]=="L"|plot_type[p]=="l"){
+        scale=1:length(plot[[p]])
+        gg_inf1=gg_inf
+        gg_inf1[,1]=as.numeric(gg_inf1[,1])
+        gg_inf1[,2]=as.numeric(gg_inf1[,2])
+        gg_inf1[,3]=as.numeric(gg_inf1[,3])
+        gg_inf1=data.frame(cbind(gg_inf1,scale))
+        if(is.null(ylab[[p]])){
+          ylab[[p]]="Estimate"
+        }
+        if(is.null(xlab[[p]])){
+          xlab[[p]]=""
+        }
+        if(is.null(main[[p]])){
+          if(is.null(ylim[[p]])&is.null(xlim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])
+          }else if(is.null(ylim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              xlim(xlim[[p]])
+          }else if(is.null(xlim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])
+          }else{
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])+
+              xlim(xlim[[p]])
+          }
+        }else{
+          if(is.null(ylim[[p]])&is.null(xlim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ggtitle(main[[p]])
+          }else if(is.null(ylim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              xlim(xlim[[p]])+
+              ggtitle(main[[p]])
+          }else if(is.null(xlim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])+
+              ggtitle(main[[p]])
+          }else{
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])+
+              xlim(xlim[[p]])+
+              ggtitle(main[[p]])
+          }
+        }
+        print(h)
+      }else if(plot_type[p]=="Bar"|plot_type[p]=="bar"|plot_type[p]=="B"|plot_type[p]=="b"){
+        gg_inf1=gg_inf
+        gg_inf1[,1]=as.numeric(gg_inf1[,1])
+        gg_inf1[,2]=as.numeric(gg_inf1[,2])
+        gg_inf1[,3]=as.numeric(gg_inf1[,3])
+        if(is.null(ylab[[p]])){
+          ylab[[p]]="Estimate"
+        }
+        if(is.null(xlab[[p]])){
+          xlab[[p]]=""
+        }
+        if(is.null(main[[p]])){
+          if(is.null(xlim[[p]])&is.null(ylim[[p]])){
+            h=ggplot(gg_inf1)+
+              geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+              geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])
+          }else if(is.null(xlim[[p]])){
+            h=ggplot(gg_inf1)+
+              geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+              geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])
+          }else if(is.null(ylim[[p]])){
+            h=ggplot(gg_inf1)+
+              geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+              geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              xlim(xlim[[p]])
+          }else{
+            h=ggplot(gg_inf1)+
+              geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+              geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])+
+              xlim(xlim[[p]])
+          }
+        }else{
+          if(is.null(xlim[[p]])&is.null(ylim[[p]])){
+            h=ggplot(gg_inf1)+
+              geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+              geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ggtitle(main[[p]])
+          }else if(is.null(xlim[[p]])){
+            h=ggplot(gg_inf1)+
+              geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+              geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])+
+              ggtitle(main[[p]])
+          }else if(is.null(ylim[[p]])){
+            h=ggplot(gg_inf1)+
+              geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+              geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              xlim(xlim[[p]])+
+              ggtitle(main[[p]])
+          }else{
+            h=ggplot(gg_inf1)+
+              geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+              geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])+
+              xlim(xlim[[p]])+
+              ggtitle(main[[p]])
+          }
+        }
+        print(h)
+      }else if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
+        gg_inf1=gg_inf
+        gg_inf1[,1]=as.numeric(gg_inf1[,1])
+        gg_inf1[,2]=as.numeric(gg_inf1[,2])
+        gg_inf1[,3]=as.numeric(gg_inf1[,3])
+        gg_inf1[,5]=as.numeric(gg_inf1[,5])
+        names(gg_inf1)=c("y","ll","ul","Group","scale")
+        if(is.null(ylab[[p]])){
+          ylab[[p]]="Estimate"
+        }
+        if(is.null(xlab[[p]])){
+          xlab[[p]]=""
+        }
+        if(is.null(main[[p]])){
+          if(is.null(ylim[[p]])&is.null(xlim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul,fill=Group),alpha=.5,colour=NA)+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+ 
+              scale_fill_grey()
+            
+          }else if(is.null(ylim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul,fill=Group),alpha=.5,colour=NA)+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              xlim(xlim[[p]])+ 
+              scale_fill_grey()
+            
+          }else if(is.null(xlim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul,fill=Group),alpha=.5,colour=NA)+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])+ 
+              scale_fill_grey()
+            
+          }else{
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul,fill=Group),alpha=.5,colour=NA)+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])+
+              xlim(xlim[[p]])
+          }
+        }else{
+          if(is.null(ylim[[p]])&is.null(xlim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul,fill=Group),alpha=.5,colour=NA)+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ggtitle(main[[p]])+ 
+              scale_fill_grey()
+            
+          }else if(is.null(ylim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul,fill=Group),alpha=.5,colour=NA)+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              xlim(xlim[[p]])+
+              ggtitle(main[[p]])+ 
+              scale_fill_grey()
+            
+          }else if(is.null(xlim[[p]])){
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul,fill=Group),alpha=.5,colour=NA)+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])+
+              ggtitle(main[[p]])+ 
+              scale_fill_grey()
+            
+          }else{
+            h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
+              geom_ribbon(aes(x=scale,ymin=ll,ymax=ul,fill=Group),alpha=.5,colour=NA)+
+              geom_line(aes(x=scale,y=y))+
+              xlab(xlab[[p]])+
+              ylab(ylab[[p]])+
+              ylim(ylim[[p]])+
+              xlim(xlim[[p]])+
+              ggtitle(main[[p]])+ 
+              scale_fill_grey()
+            
+          }
+        }
+        print(h)
+      }else{
+        blurb="Error: Only bar charts and line charts currently supported"
+        blurb=data.frame(blurb)
+        colnames(blurb)=NULL
+        row.names(blurb)=c("")
+        print(blurb)
+      } 
+    } 
+  }
+  return(out)
+}
+
+
+
+#Works in base r
+
+#mod is a fitted model object or a vector of fitted model objects
+#from lm, glm, lmer, glmer, glmmTMB, or coxph
+
+#X is the data matrix or list of data matrices of X regressors
+#for the corresponding model objects
+
+inspect_mods=function(mod=NA,
+                      Plots=T,
+                      X=NULL){
+  
+  if(sum(class(mod)=="list")==1){
+    num_mods=length(mod)
+  }else{
+    num_mods=1
+  }
+
+  if(num_mods==1){
+    
+    s=summary(mod)
+    lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
+    glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
+    cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
+    glm=ifelse(cox+lme4+glmmTMB==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+    
+    if(glmmTMB==1){
+      res=resid(mod)
+      fit=c(nrow(coefficients(summary(mod))$cond),
+            AIC(mod),
+            BIC(mod),
+            -2*logLik(mod),
+            cor(fitted(mod),fitted(mod)+res)^2)
+      if(is.null(X)){
+        X=mod$frame
+        X=X[,2:ncol(X)]
+        x_null=1
+      }else{
+        x_null=0
+      }
+    }else if(lme4==1){
+      res=resid(mod)
+      fit=c(nrow(summary(mod)$coefficients),
+            AIC(mod),
+            BIC(mod),
+            -2*logLik(mod),
+            cor(fitted(mod),fitted(mod)+res)^2)
+      if(is.null(X)){
+        X=model.frame(mod)
+        X=X[,2:ncol(X)]
+        x_null=1
+      }else{
+        x_null=0
+      }
+    }else if(glm==1){
+      res=resid(mod)
+      fit=c(nrow(summary(mod)$coefficients),
+            AIC(mod),
+            BIC(mod),
+            -2*logLik(mod),
+            cor(fitted(mod),fitted(mod)+res)^2)
+      if(is.null(X)){
+        X=model.frame(mod)
+        X=as.matrix(X[,2:ncol(X)])
+        colnames(X)=c(names(model.frame(mod))[2:ncol(model.frame(mod))])
+        x_null=1
+      }else{
+        x_null=0
+      }
+    }else if (cox==1){
+      fit=c(nrow(summary(mod)$coefficients),
+            AIC(mod),
+            BIC(mod),
+            -2*logLik(mod),
+            NA)
+    }else{
+      blurb="Error: Model type not currently supported"
+      blurb=data.frame(blurb)
+      colnames(blurb)=NULL
+      row.names(blurb)=c("")
+      print(blurb)
+    }
+    
+    table=cbind(round(fit,2),
+                c("Smaller is better",
+                  "Smaller is better",
+                  "Smaller is better",
+                  "Smaller is better",
+                  "Closer to 1 is better"))
+    table=data.frame(table)
+    row.names(table)=c("Parameters","AIC","BIC","-2LL","Marginal R2")
+    colnames(table)=c("Model","Interpretation")
+    flag=ifelse(sum(is.na(table[5,]))>0,1,0)
+    table[5,]=ifelse(is.na(table[5,]),"NA",table[5,])
+    table
+    
+    if(Plots==T){
+      if(cox==1){
+        for(p in 1:ncol(cox.zph(mod)$y)){
+          plot(cox.zph(mod)[p],
+               main="Plot of Schoenfeld Residuals for Cox Regression Model")
+          readline("Press enter to proceed to the next plot")
+        }
+      }else{
+        hist(res,main="Histogram of Residuals",xlab="Residual")
+        readline("Press enter to proceed to the next plot")
+        qqnorm(res)
+        qqline(res)
+        readline("Press enter to proceed to the next plot")
+        X=data.frame(X)
+        for(p in 1:ncol(X)){
+          gg_inf=data.frame(res,X[,p])
+          names(gg_inf)=c("Residual","x")
+          if(x_null==1){
+            if(is.numeric(model.frame(mod)[,(p+1)])){
+              gg_inf[,2]=as.numeric(gg_inf[,2])
+              neg_min=ifelse(min(gg_inf[,2])<0,1,0)
+              neg_max=ifelse(max(gg_inf[,2])<0,1,0)
+              rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
+              rib_y=rep(mean(gg_inf[,1]))
+              rib_lower1=rib_y-2*sd(gg_inf[,1])
+              rib_upper1=rib_y+2*sd(gg_inf[,1])
+              rib_lower2=rib_y-sd(gg_inf[,1])
+              rib_upper2=rib_y+sd(gg_inf[,1])
+              rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
+              names(rib)=c("x_val","upper1","lower1","upper2","lower2")
+              h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                geom_point()+
+                geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
+                geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
+                xlab(names(X)[p])+
+                ggtitle(paste("Plot of Residuals for",names(X)[p]),subtitle="Mean +/- SD")
+              print(h)
+            }else{
+              h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                geom_boxplot()+
+                xlab(names(X)[p])+
+                ggtitle(paste("Plot of Residuals for",names(X)[p]))
+              print(h)
+            }
+          }else{
+            if(is.numeric(gg_inf[,2])){
+              neg_min=ifelse(min(gg_inf[,2])<0,1,0)
+              neg_max=ifelse(max(gg_inf[,2])<0,1,0)
+              rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
+              rib_y=rep(mean(gg_inf[,1]))
+              rib_lower1=rib_y-2*sd(gg_inf[,1])
+              rib_upper1=rib_y+2*sd(gg_inf[,1])
+              rib_lower2=rib_y-sd(gg_inf[,1])
+              rib_upper2=rib_y+sd(gg_inf[,1])
+              rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
+              names(rib)=c("x_val","upper1","lower1","upper2","lower2")
+              h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                geom_point()+
+                geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
+                geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
+                xlab(names(X)[p])+
+                ggtitle(paste("Plot of Residuals for",names(X)[p]),subtitle="Mean +/- SD")
+              print(h)
+          }else{
+              h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                geom_boxplot()+
+                xlab(names(X)[p])+
+                ggtitle(paste("Plot of Residuals for",names(X)[p]))
+              print(h)
+          }
+          }
+
+          if(p==ncol(X)){
+
+          }else{
+            readline("Press enter to proceed to the next plot")
+          }
+        } 
+      }
+    }
+    
+    
+  }else{
+    fit=matrix(nrow=5,ncol=num_mods)
+    if(is.null(X)){
+      X_flag=1
+      X=list()
+    }else{
+      X_flag=0
+    }
+    for(m in 1:num_mods){
+      s=summary(mod[[m]])
+      lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
+      glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
+      cox=ifelse("fail"%in%c(names(s)),1,0)
+      glm=ifelse(cox+lme4+glmmTMB==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+      
+      
+      if(glmmTMB==1){
+        res=resid(mod[[m]])
+        fit[,m]=c(nrow(summary(mod[[m]])$coefficients$cond),
+                  AIC(mod[[m]]),
+                  BIC(mod[[m]]),
+                  -2*logLik(mod[[m]]),
+                  cor(fitted(mod[[m]]),fitted(mod[[m]])+res)^2)
+        if(X_flag==1){
+          X[[m]]=mod[[m]]$frame
+          X[[m]]=X[[m]][,2:ncol(X[[m]])]
+        }
+        
+      }else if(lme4==1){
+        res=resid(mod[[m]])
+        fit[,m]=c(nrow(summary(mod[[m]])$coefficients),
+                  AIC(mod[[m]]),
+                  BIC(mod[[m]]),
+                  -2*logLik(mod[[m]]),
+                  cor(fitted(mod[[m]]),fitted(mod[[m]])+res)^2)
+        if(X_flag==1){
+          X[[m]]=model.frame(mod[[m]])
+          X[[m]]=X[[m]][,2:ncol(X[[m]])]
+        }
+        
+      }else if(glm==1){
+        res=resid(mod[[m]])
+        fit[,m]=c(nrow(summary(mod[[m]])$coefficients),
+                  AIC(mod[[m]]),
+                  BIC(mod[[m]]),
+                  -2*logLik(mod[[m]]),
+                  cor(fitted(mod[[m]]),fitted(mod[[m]])+res)^2)
+        if(X_flag==1){
+          X[[m]]=model.frame(mod[[m]])
+          X[[m]]=as.matrix(X[[m]][,2:ncol(X[[m]])])
+          colnames(X[[m]])=c(names(model.frame(mod[[m]]))[2:ncol(model.frame(mod[[m]]))])
+        }
+        
+      }else if (cox==1){
+        fit[,m]=c(nrow(summary(mod[[m]])$coefficients),
+                  AIC(mod[[m]]),
+                  BIC(mod[[m]]),
+                  -2*logLik(mod[[m]]),
+                  NA)
+      }else{
+        blurb="Error: Model type not currently supported"
+        blurb=data.frame(blurb)
+        colnames(blurb)=NULL
+        row.names(blurb)=c("")
+        print(blurb)
+      }
+      
+      
+      table=cbind(round(fit,2),
+                  c("Smaller is better",
+                    "Smaller is better",
+                    "Smaller is better",
+                    "Smaller is better",
+                    "Closer to 1 is better"))
+      table=data.frame(table)
+      row.names(table)=c("Parameters","AIC","BIC","-2LL","Marginal R2")
+      colnames(table)=c(paste("Model ",1:num_mods,sep=""),"Interpretation")
+      flag=ifelse(sum(is.na(table[5,]))>0,1,0)
+      table[5,]=ifelse(is.na(table[5,]),"NA",table[5,])
+      table
+      
+      if(Plots==T){
+        if(cox==1){
+          for(p in 1:ncol(cox.zph(mod[[m]])$y)){
+            plot(cox.zph(mod[[m]])[p],
+                 main=paste("Plot of Schoenfeld Residuals for Cox Regression, Model ",m))
+            readline("Press enter to proceed to the next plot")
+          }
+        }else{
+          hist(res,main=paste("Histogram of Residuals for Model ", m,sep=""),xlab="Residual")
+          readline("Press enter to proceed to the next plot")
+          qqnorm(res,main=paste("Normal Q-Q Plot for Model ", m,sep=""))
+          qqline(res)
+          readline("Press enter to proceed to the next plot")
+          X1=data.frame(X[[m]])
+          for(p in 1:ncol(X1)){
+            gg_inf=data.frame(res,X1[,p])
+            names(gg_inf)=c("Residual","x")
+            if(X_flag==1){
+              if(is.numeric(model.frame(mod[[m]])[,p+1])){
+                gg_inf[,2]=as.numeric(gg_inf[,2])
+                neg_min=ifelse(min(gg_inf[,2])<0,1,0)
+                neg_max=ifelse(max(gg_inf[,2])<0,1,0)
+                rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
+                rib_y=rep(mean(gg_inf[,1]))
+                rib_lower1=rib_y-2*sd(gg_inf[,1])
+                rib_upper1=rib_y+2*sd(gg_inf[,1])
+                rib_lower2=rib_y-sd(gg_inf[,1])
+                rib_upper2=rib_y+sd(gg_inf[,1])
+                rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
+                names(rib)=c("x_val","upper1","lower1","upper2","lower2")
+                
+                h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                  geom_point()+
+                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
+                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
+                  xlab(names(X1)[p])+
+                  ggtitle(paste("Plot of Residuals for",names(X1)[p]),subtitle="Mean +/- SD")
+                print(h)
+              }else{
+                h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                  geom_boxplot()+
+                  xlab(names(X1)[p])+
+                  ggtitle(paste("Plot of Residuals for",names(X1)[p]))
+                print(h)
+              }
+            }else{
+              if(is.numeric(gg_inf[,2])){
+                neg_min=ifelse(min(gg_inf[,2])<0,1,0)
+                neg_max=ifelse(max(gg_inf[,2])<0,1,0)
+                rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
+                rib_y=rep(mean(gg_inf[,1]))
+                rib_lower1=rib_y-2*sd(gg_inf[,1])
+                rib_upper1=rib_y+2*sd(gg_inf[,1])
+                rib_lower2=rib_y-sd(gg_inf[,1])
+                rib_upper2=rib_y+sd(gg_inf[,1])
+                rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
+                names(rib)=c("x_val","upper1","lower1","upper2","lower2")
+                
+                h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                  geom_point()+
+                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
+                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
+                  xlab(names(X1)[p])+
+                  ggtitle(paste("Plot of Residuals for",names(X1)[p]),subtitle="Mean +/- SD")
+                print(h)
+              }else{
+                h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                  geom_boxplot()+
+                  xlab(names(X1)[p])+
+                  ggtitle(paste("Plot of Residuals for",names(X1)[p]))
+                print(h)
+              }
+            }
+            if(p==ncol(X1)&m==num_mods){
+              
+            }else{
+              readline("Press enter to proceed to the next plot")
+            }
+          }
+        }
+      }
+    }
+  }
+  cox_note="Note: Marginal R2 not possible for Cox regression models"
+  cox_note=data.frame(cox_note)
+  colnames(cox_note)=NULL
+  row.names(cox_note)=c("")
+  print(table)
+  if(flag==1){
+    print(cox_note)
+  }
+  invisible(table)
+}
+
+
+
+
+#Depends on tidyverse
+
+#inputs is a list of unique regressor names in a regression model,
+#intended to be used in conjunction with L_inputs
+
+#design is a matrix of regressor names identified as either
+#an association or a effect modifier/moderator, as from L_inputs
+
+#mod is a fitted model object from lm, glm, lmer, glmer, glmmTMB, or coxph
+
+#Est_Num is the number of linear combination estiamtes that are of interest
+
+#Returns a list including input regressor names, and design matrix designating
+#regressor relationships, and a formatted table to specify
+#a linear combination matrix to estimate magnitudes of association;
+#will identify if interaction terms are missing from model
+
+L_assoc_design=function(inputs,
+                        design,
+                        mod,
+                        Est_Num=2){
+  
+  design1=matrix(nrow=nrow(design),ncol=1)
+  design2=matrix(nrow=nrow(design),ncol=1)
+  design3=matrix(nrow=nrow(design),ncol=1)
+  for(i in 1:nrow(design1)){
+    design1[i,]=ifelse(is.na(design[i,2]),"",
+                       ifelse(design[i,2]==T,"Association",""))
+    design2[i,]=ifelse(is.na(design[i,3]),"Not Included in Estimate",
+                       ifelse(design[i,3]==T,"Effect Modifier/Moderator","Not Included in Estimate"))
+    design3[i,]=paste(design1[i,1],ifelse(design1[i,1]=="",design2[i,1],""),sep="")
+  }
+  
+  s=summary(mod)
+  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
+  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
+  cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
+  rma_mv=ifelse(is.null(mod$vi),0,1)
+  glm=ifelse(cox+lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  
+  if(glmmTMB==1){
+    coef_nam=c(rownames(summary(mod)$coefficients$cond))
+  }else if(cox==1){
+    coef_nam=c("(Intercept)",rownames(summary(mod)$coefficients))
+  }else{
+    coef_nam=c(rownames(summary(mod)$coefficients))
+  }
+  split_text=str_split(coef_nam, ":", simplify = TRUE)
+  split_bin=ifelse(split_text=="",0,1)
+  split_num=matrix(ncol=1,nrow=sum(rowSums(split_bin)==1))
+  coef_names1=c(split_text[2:length(split_num),1])
+  coef_names=NULL
+  for(p in 1:length(design3)){
+    coef_names=c(coef_names,ifelse(design3[p]=="Effect Modifier/Moderator",coef_names1[p],NA))
+  }
+  coef_names=c("Estimate Name",coef_names[is.na(coef_names)==F])
+  Cols=data.frame(cbind(coef_names,matrix(nrow=length(coef_names),ncol=(Est_Num))))
+  row.names(Cols)=1:length(coef_names)
+  colnames(Cols)=c("Coefficient",paste("Estimate ",1:Est_Num,sep=""))
+  
+  interacts=matrix(nrow=length(design3),ncol=length(design3))
+  for(p in 1:length(coef_names1)){
+    for(q in 1:length(coef_names1)){
+      pair=c(design3[p],design3[q])
+      id=names(table(pair))
+      interacts[p,q]=ifelse(length(id)==2,
+                            ifelse(sum(id==c("Association",
+                                             "Effect Modifier/Moderator"))==2,
+                                   1,0),0)
+    }
+  }
+  
+  flag=0
+  for(p in 1:length(coef_names1)){
+    for(q in 1:length(coef_names1)){
+      if(interacts[p,q]==1){
+        flag1=NULL
+        for(r in 1:nrow(split_text)){
+          v1=ifelse(coef_names1[p]%in%split_text[r,],1,0)
+          v2=ifelse(coef_names1[q]%in%split_text[r,],1,0)
+          flag1=c(flag1,ifelse(v1+v2==2,0,1))
+        }
+        flag=flag+min(flag1)
+        if(flag>0){
+          focal=ifelse(design3[p]=="Association",coef_names1[p],coef_names1[q])
+          moderate=ifelse(design3[p]=="Effect Modifier/Moderator",coef_names1[p],coef_names1[q])
+          stop(paste("Model not currently specified to allow for effect modification of",
+                     focal," by ",moderate,", consider adding ",focal,"*",moderate,
+                     " to the model statement!"))
+        }
+      }else{
+        flag=flag
+      }
+    }
+  }
+  
+  out=list()
+  out$inputs=inputs
+  out$design=design3
+  out$table=Cols
+  return(out)
+}
+
+
+
+#Depends on tidyverse
+
+#L_x is a P x E matrix of P moderater levels across E estimates 
+#intended to be used in conjunction with L_inputs and L_assoc_design
+
+#design is a matrix of regressor names identified as either
+#an association or a effect modifier/moderator, as from L_inputs
+
+#mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
+
+#Est_Names is E length vector of estimate names
+
+#Returns an L matrix representing the association estimates
+#implied by the deisgn statment for the corresponding model,
+#such that a regressor identified as an association will be
+#included as a main effect and any interaction terms,
+#a regressor identified as an effect modifier/moderator
+#will not be included as a main effect but will be included
+#in interaction terms, and a variable not included in the estimate
+#will be constrained to zero.
+
+L_assoc_fit=function(L_x,
+                     design,
+                     mod,
+                     Est_Names=NULL){
+  
+  s=summary(mod)
+  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
+  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
+  cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
+  rma_mv=ifelse(is.null(mod$vi),0,1)
+  glm=ifelse(cox+lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  
+  L_x2=matrix(nrow=(length(design)),ncol=ncol(L_x))
+  for(e in 1:ncol(L_x)){
+    L_x1=NULL
+    q=1
+    for(p in 1:(length(design))){
+      L_x1=c(L_x1,ifelse(design[p]=="Association",1,ifelse(
+        design[p]=="Not Included in Estimate",0,L_x[q,e])))
+      if(design[p]=="Effect Modifier/Moderator"){q=q+1}
+    }
+    L_x2[,e]=L_x1
+  }
+  
+  L1=rbind(0,L_x2)
+  
+  if(is.null(Est_Names)){
+    Est_Names=c(paste("Estimate",1:ncol(L_x)))
+  }
+  
+  
+  if(glmmTMB==1){
+    coef_nam=c(rownames(summary(mod)$coefficients$cond))
+  }else if(cox==1){
+    coef_nam=c("(Intercept)",rownames(summary(mod)$coefficients))
+  }else if(rma_mv==1){
+    coef_nam=c(rownames(mod$beta))
+  }else{
+    coef_nam=c(rownames(summary(mod)$coefficients))
+  }
+  split_text=str_split(coef_nam, ":", simplify = TRUE)
+  split_bin=ifelse(split_text=="",0,1)
+  split_num=matrix(ncol=1,nrow=sum(rowSums(split_bin)==1))
+  
+  L=matrix(nrow=nrow(split_text),ncol=length(c(Est_Names)))
+  
+  for(e in 1:length(c(Est_Names))){
+    split_num=matrix(L1[,e])
+    for(p in 1:nrow(L)){
+      coef=split_text[p,]
+      mult=1
+      for(q in 1:nrow(split_num)){
+        for(r in 1:ncol(split_num)){
+          mult=mult*ifelse(split_text[q,r]%in%coef,as.numeric(split_num[q,1]),1)
+        }
+      }
+      L[p,e]=mult
+    }
+  }
+  
+  for(e in 1:length(c(Est_Names))){
+    split_num=matrix(L1[,e])
+    for(p in 1:nrow(L)){
+      coef=split_text[p,]
+      drop=0
+      for(q in 1:ncol(split_text)){
+        drop=drop+ifelse(coef[q]%in%
+                           c(subset(split_text[2:(length(split_num))],design=="Association")),
+                         1,0)
+      }
+      drop=ifelse(drop==0,0,L[p,e])
+      L[p,e]=drop
+    }
+  }
+  row.names(L)=c(coef_nam)
+  
+  if(cox==1){
+    L=L[2:nrow(L),]
+  }
+  
+  return(L)
+  
+}
+
+
+
+#Depends on tidyverse, shiny, shinyRadioMatrix
+
+#mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
+
+#Provides an easy interface for designating variables as one of:
+#   Associations (main effect and interactions included)
+#   Moderators/effect modifiers (only includes interactions with association variable)
+#   Not included in the estimate (0 for all coefficients)
+
+#Intended to be used with L_Specify and Est_Mod for writing L matrix
+
+L_Designer=function(mod){
+  ui <- fluidPage(
+    
+    titlePanel("L Matrix Designer"),
+    mainPanel(
+      radioMatrixInput(inputId = "des",
+                       rowIDs = paste("X",1:nrow(L_inputs(mod)),sep=""),
+                       rowLLabels = c(L_inputs(mod))$Coefficient,
+                       choices = list("Primary Association","Moderator/Effect Modifier","Not Included")),
+      
+      actionButton(inputId = "go",label = "Display Backup Code"),
+    ),
+  )
+  server <- function(input, output, session) {  
+    
+    data <- observeEvent(input$go, {
+      all={input$des}
+      design=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=2)
+      for(p in 1:length(L_inputs(mod)$Coefficient)){
+        design[p,1]=L_inputs(mod)$Coefficient[p]
+        design[p,2]=all[[p]]
+      }
+      Design <<- design
+      
+    })
+    
+    text <- observeEvent(input$go, {
+      out1=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=1)
+      out2=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=1)
+      for(p in 1:length(L_inputs(mod)$Coefficient)){
+        if(p==1){
+          out1=paste("Design=cbind(c('",Design[p,1],"',",sep="")
+          out2=paste("c('",Design[p,2],"',",sep="")
+        }else if(p<length(L_inputs(mod)$Coefficient)){
+          out1=c(out1,paste("'",Design[p,1],"',",sep=""))
+          out2=c(out2,paste("'",Design[p,2],"',",sep=""))
+        }else{
+          out1=c(out1,paste("'",Design[p,1],"'),",sep=""))
+          out2=c(out2,paste("'",Design[p,2],"'))",sep=""))
+        }
+      }
+      cat(cat("","","Copy and paste the following into R to backup your work!",
+              "","",sep='\n'),cat(cat(out1,'\n'),cat(out2),sep='\n'),sep='\n')
+    })
+    session$onSessionEnded(function() { stopApp() })
+    
+  }
+  shinyApp(ui, server)
+  
+}
+
+
+
+#Depends on tidyverse
+
+#mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
+
+#Returns an object of unique regressor names excluding the intercept,
+#for the purpose of setting up a linear combination matrix
+
+L_inputs=function(mod){
+  
+  s=summary(mod)
+  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
+  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
+  cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
+  rma_mv=ifelse(is.null(mod$vi),0,1)
+  glm=ifelse(cox+lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  
+  if(glmmTMB==1){
+    coef_nam=c(rownames(summary(mod)$coefficients$cond))
+  }else if(cox==1){
+    coef_nam=c("(Intercept)",rownames(summary(mod)$coefficients))
+  }else if(rma_mv==1){
+    coef_nam=c(rownames(mod$beta))
+  }else{
+    coef_nam=c(rownames(summary(mod)$coefficients))
+  }
+  split_text=str_split(coef_nam, ":", simplify = TRUE)
+  split_bin=ifelse(split_text=="",0,1)
+  split_num=matrix(ncol=1,nrow=sum(rowSums(split_bin)==1))
+  coef_names=c(split_text[2:length(split_num),1])
+  
+  Cols=data.frame(Coefficient=coef_names)
+  return(Cols)
+}
+
+#Depends on tidyverse
+
+#mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
+
+#Returns an object of model coefficients,
+#for the purpose of setting up a linear combination matrix
+
+L_inputs_gen=function(mod){
+  
+  s=summary(mod)
+  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
+  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
+  rma_mv=ifelse(is.null(mod$vi),0,1)
+  glm=ifelse(lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  
+  if(glmmTMB==1){
+    coef_nam=c(rownames(summary(mod)$coefficients$cond))
+  }else if(rma_mv==1){
+    coef_nam=c(rownames(mod$beta))
+  }else{
+    coef_nam=c(rownames(summary(mod)$coefficients))
+  }
+  
+  Cols=data.frame(c("Estimate Name",coef_nam))
+  colnames(Cols)=c("Coefficient")
+  
+  return(Cols)
+}
+
+
+#Depends on tidyverse
+
+#L_x is a P x E matrix of P regressor levels across E estimates 
+#intended to be used in conjunction with L_inputs to produce a model forecast
+
+#mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
+
+#Est_Names is E length vector of estimate names
+
+#Returns an L matrix representing the implied main effects 
+#and interactions for the given levels of each regressor
+#to properly specify a model forecast
+
+L_pred_fit=function(L_x,
+                    mod,
+                    Est_Names=NULL){
+  L1=rbind(1,L_x)
+  
+  if(is.null(Est_Names)){
+    Est_Names=c(paste("Estimate",1:ncol(L_x)))
+  }
+  
+  s=summary(mod)
+  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
+  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
+  cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
+  rma_mv=ifelse(is.null(mod$vi),0,1)
+  glm=ifelse(cox+lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  
+  if(glmmTMB==1){
+    coef_nam=c(rownames(summary(mod)$coefficients$cond))
+  }else if(cox==1){
+    coef_nam=c("(Intercept)",rownames(summary(mod)$coefficients))
+  }else if(rma_mv==1){
+    coef_nam=c(rownames(mod$beta))
+  }else{
+    coef_nam=c(rownames(summary(mod)$coefficients))
+  }
+  split_text=str_split(coef_nam, ":", simplify = TRUE)
+  split_bin=ifelse(split_text=="",0,1)
+  split_num=matrix(ncol=1,nrow=sum(rowSums(split_bin)==1))
+  
+  L=matrix(nrow=nrow(split_text),ncol=length(c(Est_Names)))
+  
+  for(e in 1:length(c(Est_Names))){
+    split_num=matrix(L1[,e])
+    for(p in 1:nrow(L)){
+      coef=split_text[p,]
+      mult=1
+      for(q in 1:nrow(split_num)){
+        for(r in 1:ncol(split_num)){
+          mult=mult*ifelse(split_text[q,r]%in%coef,as.numeric(split_num[q,1]),1)
+        }
+      }
+      L[p,e]=mult
+    }
+  }
+  row.names(L)=c(coef_nam)
+  
+  if(cox==1){
+    L=L[2:nrow(L),]
+  }
+  
+  return(L)
+  
+}
+
+
+#Depends on tidyverse, shiny, and shinyMatrix
+
+#mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
+
+#Est_Num is the number of linear combination estiamtes that are of interest
+
+#type is a character from the following:
+
+#   Mean (estimating the average for given X levels)
+
+#   Association (estimating magnitudes of association for
+#   a chosen variable at levels of a moderator variable)
+
+#   General (manual filling in of all levels of the L matrix)
+
+#Design is required for type = Association, a matrix designating
+#which variables are associations (main effect and interactions included),
+#moderators/effect modifiers (only included for interactions
+#with association variable), or not included in the estimate (0 for all coefficients)
+
+#Returns an L matrix designed for use with the Est_Mod statement to make
+#a meaningful regression model forecast.
+#If type = General, this is just a simpler format for inputting each variable.
+#If type = Mean or Association, the function  will identify the proper
+#pattern of interaction terms according to what is requested.
+
+L_Specify=function(mod,
+                   Est_Num,
+                   type="Mean",
+                   Design=NULL){
+  
+  s=summary(mod)
+  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
+  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
+  cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
+  glm=ifelse(cox+lme4+glmmTMB==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  
+  
+  if(type=="General"|type=="general"|type=="G"|type=="g"|type=="Gen"|type=="gen"){
+    m=data.frame(matrix(nrow=(length(L_inputs_gen(mod)$Coefficient)),
+                        ncol=Est_Num))
+    colnames(m)=c(paste("Estimate ",1:Est_Num,sep=""))
+    row.names(m)=c(L_inputs_gen(mod)$Coefficient)
+    m=as.matrix(m)
+    
+    ui <- fluidPage(
+      
+      titlePanel("L Matrix Inputs"),
+      mainPanel(
+        width=20,
+        tags$h5(strong("Input a name and the corresponding X values for each coefficient you would like to estimate the average for")),
+        matrixInput("sample",value = m,
+                    rows = list(extend = FALSE),
+                    cols = list(names = TRUE)),
+        actionButton(inputId = "go",label = "Display Backup Code"),
+      ),
+    )
+    server <- function(input, output, session) {  
+      data <- observeEvent(input$go, {
+        all={input$sample}
+        L <<-matrix(as.numeric(as.matrix(all[2:nrow(all),1:ncol(all)])),nrow=(nrow(all)-1))
+        Est_Names <<- c(as.matrix(all[1,1:ncol(all)]))
+      })
+      
+      text <- observeEvent(input$go, {
+        for(p in 1:ncol(L)){
+          if(p==1){
+            out=paste("L=cbind(c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+          }else if(p<ncol(L)){
+            col=paste("c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+            out=paste(out,col,sep='\n')
+          }else{
+            col=paste("c(",noquote(toString(L[1:nrow(L),p])),"))",sep="")
+            out=paste(out,col,sep='\n')
+          }
+        }
+        
+        for(p in 1:ncol(L)){
+          if(p==1){
+            nam=noquote(paste("Est_Names=c('",input$sample[1,p],"',",sep=""))
+          }else if(p<ncol(L)){
+            nam=c(nam,noquote(paste("'",input$sample[1,p],"',",sep="")))
+          }else{
+            nam=c(nam,noquote(paste("'",input$sample[1,p],"')",sep="")))
+          }
+        }
+        
+        cat(cat(paste("","","Copy and paste the following into R to backup your work!",
+                      "","",out,"","",sep='\n')),
+            cat(nam),sep='\n')
+      })
+      
+      session$onSessionEnded(function() { stopApp() })
+      
+    }
+    shinyApp(ui, server)
+  }else if(type=="Association"|type=="association"|type=="Assoc"|type=="assoc"|type=="A"|type=="a"){
+    if(is.null(Design)){
+      stop("Error: Association design needs to specified if type = 'Association', consider using L_Designer function!")
+    }
+    
+    m=data.frame(matrix(nrow=(sum(Design[,2]=="Moderator/Effect Modifier")+1),
+                        ncol=Est_Num))
+    colnames(m)=c(paste("Estimate ",1:Est_Num,sep=""))
+    row.names(m)=c("Estimate Name",c(Design[Design[,2]=="Moderator/Effect Modifier",1]))
+    m=as.matrix(m)
+    
+    
+    des2=matrix(nrow=nrow(Design),ncol=3)
+    des2[,1]=Design[,1]
+    des2[,2]=ifelse(Design[,2]=="Primary Association",T,F)
+    des2[,3]=ifelse(Design[,2]=="Moderator/Effect Modifier",T,F)
+    des2=data.frame(des2)
+    colnames(des2)=c("Coefficient","Association","Moderator")
+    
+    design_processed=L_assoc_design(L_inputs(mod),des2,mod,Est_Num)
+    
+    ui <- fluidPage(
+      
+      titlePanel("L Matrix Inputs"),
+      mainPanel(
+        width=20,
+        tags$h5(strong("Input a name and the corresponding X values for each coefficient you would like to estimate the average for")),
+        matrixInput("sample",value = m,
+                    rows = list(extend = FALSE),
+                    cols = list(names = TRUE)),
+        actionButton(inputId = "go",label = "Display Backup Code"),
+      ),
+    )
+    server <- function(input, output, session) {  
+      data <- observeEvent(input$go, {
+        all={input$sample}
+        L <<- L_assoc_fit(matrix(as.numeric(all[2:nrow(all),1:ncol(all)]),nrow=sum(Design[,2]=="Moderator/Effect Modifier"),ncol=Est_Num),
+                          design_processed$design,mod)
+        Est_Names <<- c(as.matrix(all[1,1:ncol(all)]))
+      })
+      
+      text <- observeEvent(input$go, {
+        for(p in 1:ncol(L)){
+          if(p==1){
+            out=paste("L=cbind(c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+          }else if(p<ncol(L)){
+            col=paste("c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+            out=paste(out,col,sep='\n')
+          }else{
+            col=paste("c(",noquote(toString(L[1:nrow(L),p])),"))",sep="")
+            out=paste(out,col,sep='\n')
+          }
+        }
+        
+        for(p in 1:ncol(input$sample)){
+          if(p==1){
+            nam=noquote(paste("Est_Names=c('",input$sample[1,p],"',",sep=""))
+          }else if(p<ncol(input$sample)){
+            nam=c(nam,noquote(paste("'",input$sample[1,p],"',",sep="")))
+          }else{
+            nam=c(nam,noquote(paste("'",input$sample[1,p],"')",sep="")))
+          }
+        }
+        
+        cat(cat(paste("","","Copy and paste the following into R to backup your work!",
+                      "","",out,"","",sep='\n')),
+            cat(nam),sep='\n')
+      })
+      
+      session$onSessionEnded(function() { stopApp() })
+      
+    }
+    shinyApp(ui, server)
+    
+  }else{
+    m=data.frame(matrix(nrow=(length(L_inputs(mod)$Coefficient)+1),
+                        ncol=Est_Num))
+    colnames(m)=c(paste("Estimate ",1:Est_Num,sep=""))
+    row.names(m)=c("Estimate Name",c(L_inputs(mod)$Coefficient))
+    m=as.matrix(m)
+    
+    ui <- fluidPage(
+      
+      titlePanel("L Matrix Inputs"),
+      mainPanel(
+        width=20,
+        tags$h5(strong("Input a name and the corresponding X values for each coefficient you would like to estimate the average for")),
+        matrixInput("sample",value = m,
+                    rows = list(extend = FALSE),
+                    cols = list(names = TRUE)),
+        actionButton(inputId = "go",label = "Display Backup Code"),
+      ),
+    )
+    server <- function(input, output, session) {  
+      data <- observeEvent(input$go, {
+        all={input$sample}
+        L <<-L_pred_fit(all[2:nrow(all),1:ncol(all)],
+                        mod)
+        Est_Names <<- c(as.matrix(all[1,1:ncol(all)]))
+      })
+      
+      text <- observeEvent(input$go, {
+        for(p in 1:ncol(L)){
+          if(p==1){
+            out=paste("L=cbind(c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+          }else if(p<ncol(L)){
+            col=paste("c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+            out=paste(out,col,sep='\n')
+          }else{
+            col=paste("c(",noquote(toString(L[1:nrow(L),p])),"))",sep="")
+            out=paste(out,col,sep='\n')
+          }
+        }
+        
+        for(p in 1:ncol(input$sample)){
+          if(p==1){
+            nam=noquote(paste("Est_Names=c('",input$sample[1,p],"',",sep=""))
+          }else if(p<ncol(input$sample)){
+            nam=c(nam,noquote(paste("'",input$sample[1,p],"',",sep="")))
+          }else{
+            nam=c(nam,noquote(paste("'",input$sample[1,p],"')",sep="")))
+          }
+        }
+        
+        cat(cat(paste("","","Copy and paste the following into R to backup your work!",
+                      "","",out,"","",sep='\n')),
+            cat(nam),sep='\n')
+      })
+      
+      session$onSessionEnded(function() { stopApp() })
+      
+    }
+    shinyApp(ui, server)
+  }
+}
+
+
+#Depends on ggplot2, psych, and shiny
+
+#X is a vector of a single variable to be compared
+#across plausible distributions
+
+#ymax is the maximum density height for the output histogram
+
+Plot_Dist=function(X,
+                   ymax=NULL){
+  
+  if(is.null(ymax)){
+    ymax=max(hist(X,plot=F)$density)*1.5
+  }
+  
+  X=c(X)[complete.cases(c(X))]
+  
+  
+  non_zero=ifelse(min(X)<0,F,T)
+  non_neg=ifelse(non_zero==T&min(X)==0,T,F)
+  lim_1=ifelse(max(X)>1,F,T)
+  int=ifelse(is.integer(X)==T,T,F)
+  bin=ifelse(length(names(table(X)))==2,ifelse(sum(c(names(table(X)))==c("0","1"))==2,T,F),F)
+  
+  nrm=c("Normal")
+  exp=ifelse(non_zero==T,"Exponential",NA)
+  gam=ifelse(non_zero==T,"Gamma",NA)
+  pois=ifelse(non_neg==T&int==T,"Poisson",NA)
+  nb=ifelse(non_neg==T&int==T,"Negative Binomial",NA)
+  b_binom=ifelse(lim_1==T&non_neg==T&bin==F,c("Beta-Binomial"),NA)
+  binom=ifelse(bin==T,"Binomial",NA)
+  d_opt1=c(na.omit(c(nrm,exp,gam,pois,nb,b_binom,binom)))
+  d_opt=list()
+  for(o in 1:length(d_opt1)){
+    d_opt[o]=d_opt1[o]
+  }
+  
+  bwd=ifelse(int==T,1,(3.49*sd(X))/(length(X)^(1/3)))
+  
+  if(is.na(nrm)==F){
+    mu=mean(X)
+    sig=sd(X)
+    DF_nrm=data.frame(cbind(round(c(mean(X),sd(X),skewness(X),kurtosi(X)),2),
+                            round(c(mean(X),sd(X),0,0),2)))
+    colnames(DF_nrm)=c("Observed Sample","Theoretical Normal")
+    row.names(DF_nrm)=c("Mean","SD","Skew","Kurtosis")
+    x_nrm=seq(min(X)*0.9,max(X)*1.1,length=length(X))
+    y_nrm=dnorm(x_nrm,mu,sig)
+  }
+  if(is.na(exp)==F){
+    lam_exp=1/mean(X)
+    DF_exp=data.frame(cbind(round(c(mean(X),sd(X),skewness(X),kurtosi(X)),2),
+                            round(c(mean(X),mean(X),2,6),2)))
+    colnames(DF_exp)=c("Observed Sample","Theoretical Exponential")
+    row.names(DF_exp)=c("Mean","SD","Skew","Kurtosis")
+    x_exp=seq(0,max(X)*1.1,length=length(X))
+    y_exp=dexp(x_exp,lam_exp)
+    
+  }
+  if(is.na(gam)==F){
+    alpha_gam=mean(X)^2/var(X)
+    beta_gam=mean(X)/var(X)
+    DF_gam=data.frame(cbind(round(c(mean(X),sd(X),skewness(X),kurtosi(X)),2),
+                            round(c(alpha_gam/beta_gam,
+                                    sqrt(alpha_gam/beta_gam^2),
+                                    2/alpha_gam^2,
+                                    6/alpha_gam),2)))
+    colnames(DF_gam)=c("Observed Sample","Theoretical Gamma")
+    row.names(DF_gam)=c("Mean","SD","Skew","Kurtosis")
+    x_gam=seq(0,max(X)*1.1,length=length(X))+0.01
+    y_gam=dgamma(x_gam,alpha_gam,beta_gam)
+    
+    
+  }
+  if(is.na(pois)==F){
+    lam_pois=mean(X)
+    DF_pois=data.frame(cbind(round(c(mean(X),sd(X),skewness(X),kurtosi(X)),2),
+                             round(c(mean(X),
+                                     sqrt(mean(X)),
+                                     1/sqrt(mean(X)),
+                                     1/mean(X)),2)))
+    colnames(DF_pois)=c("Observed Sample","Theoretical Poisson")
+    row.names(DF_pois)=c("Mean","SD","Skew","Kurtosis")
+    x_pois=c(round(seq(0,max(X)+4,length=length(X)),0))
+    y_pois=dpois(x_pois,lam_pois)
+    
+  }
+  if(is.na(nb)==F){
+    size=mean(X)^2/(var(X)-mean(X))
+    prob=mean(X)/var(X)
+    if(size<0|prob<0|prob>1){
+      DF_nb=data.frame(cbind(round(c(mean(X),sd(X),skewness(X),kurtosi(X)),2),
+                             round(c(((size*(1-prob))/prob),
+                                     sqrt((size*(1-prob))/prob^2),
+                                     NA,
+                                     (6/size+prob^2/((1-prob)*size))),2)))
+      DF_nb=rbind(DF_nb,c("Parameterization Failed",""))
+      colnames(DF_nb)=c("Observed Sample","Theoretical Negative Binomial")
+      row.names(DF_nb)=c("Mean","SD","Skew","Kurtosis","")
+    }else{
+      DF_nb=data.frame(cbind(round(c(mean(X),sd(X),skewness(X),kurtosi(X)),2),
+                             round(c(((size*(1-prob))/prob),
+                                     sqrt((size*(1-prob))/prob^2),
+                                     (1+prob)/sqrt(size*prob),
+                                     (6/size+prob^2/((1-prob)*size))),2)))
+      colnames(DF_nb)=c("Observed Sample","Theoretical Negative Binomial")
+      row.names(DF_nb)=c("Mean","SD","Skew","Kurtosis")
+      x_nb=c(round(seq(0,max(X)+4,length=length(X)),0))
+      y_nb=dnbinom(x_nb,size=size,prob=prob)
+    }
+    
+  }
+  if(is.na(b_binom)==F){
+    alpha_bb=((mean(X)*(1-mean(X)))/var(X)-1)*(mean(X))
+    beta_bb=((mean(X)*(1-mean(X)))/var(X)-1)*(1-(mean(X)))
+    DF_bb=data.frame(cbind(round(c(mean(X),sd(X),skewness(X),kurtosi(X)),2),
+                           round(c(alpha_bb/(alpha_bb+beta_bb),
+                                   sqrt((alpha_bb*beta_bb)/((alpha_bb+beta_bb)^2*
+                                                              (alpha_bb+beta_bb+1))),
+                                   ((2*(beta_bb-alpha_bb))*(sqrt(alpha_bb+beta_bb+1)))/
+                                     ((alpha_bb+beta_bb+2)*sqrt(alpha_bb*beta_bb)),
+                                   (6*((alpha_bb-beta_bb)^2*(alpha_bb+beta_bb+1)-
+                                         (alpha_bb*beta_bb*(alpha_bb+beta_bb+2))))/
+                                     (alpha_bb*beta_bb*(alpha_bb+beta_bb+2)*
+                                        (alpha_bb+beta_bb+3))),2)))
+    colnames(DF_bb)=c("Observed Sample","Theoretical Beta-Binomial")
+    row.names(DF_bb)=c("Mean","SD","Skew","Kurtosis")
+    x_bb=seq(0.01,0.99,length=length(X))
+    y_bb=dbeta(x_bb,alpha_bb,beta_bb)
+    
+  }
+  if(is.na(binom)==F){
+    prob=mean(X)
+    DF_b=data.frame(cbind(round(c(mean(X),sd(X),skewness(X),kurtosi(X)),2),
+                          round(c(mean(X),
+                                  sqrt(mean(X)*(1-mean(X))),
+                                  ((1-mean(X))-mean(X))/sqrt(mean(X)*(1-mean(X))),
+                                  (1-6*mean(X)*(1-mean(X)))/(mean(X)*(1-mean(X)))),2)))
+    colnames(DF_b)=c("Observed Sample","Theoretical Binomial")
+    row.names(DF_b)=c("Mean","SD","Skew","Kurtosis")
+    x_b=round(seq(0,1,length=length(X)),0)
+    y_b=c(dbinom(0,1,prob),rep(0,length(X)-2),dbinom(1,1,prob))
+    
+  }
+  
+  hist_dat=data.frame(c(X))
+  names(hist_dat)=c("Variable")
+  
+  
+  
+  
+  ui <- fluidPage(
+    titlePanel (""),
+    sidebarLayout(
+      sidebarPanel( (""),
+                    radioButtons("Button", "What distribution do you want to consider?", 
+                                 d_opt,"") ) ,
+      mainPanel(
+        tableOutput("TableOut"),
+        plotOutput("Histo")
+      ) ) )
+  
+  server <- function(input, output, session) {
+    observe({
+      if(req(input$Button) == 'Normal'){
+        output$TableOut <- renderTable({
+          DF_nrm
+        },rownames=T)
+        output$Histo <- renderPlot({
+          ggplot(hist_dat,aes(x=Variable)) + geom_histogram(binwidth=bwd,center=0,aes(y=after_stat(density)))+
+            geom_line(aes(x=x_nrm,y=y_nrm),linetype="dashed")+
+            ylab("Density")+
+            ylim(c(0,ymax))
+        })    
+      }else if(req(input$Button) == 'Exponential'){
+        output$TableOut <- renderTable({
+          DF_exp
+        },rownames=T)
+        output$Histo <- renderPlot({
+          ggplot(hist_dat,aes(x=Variable)) + geom_histogram(binwidth=bwd,center=0,aes(y=after_stat(density)))+
+            geom_line(aes(x=x_exp,y=y_exp),linetype="dashed")+
+            ylab("Density")+
+            ylim(c(0,ymax))
+        })
+      }else if(req(input$Button) == 'Gamma'){
+        output$TableOut <- renderTable({
+          DF_gam
+        },rownames=T)
+        output$Histo <- renderPlot({
+          ggplot(hist_dat,aes(x=Variable)) + geom_histogram(binwidth=bwd,center=0,aes(y=after_stat(density)))+
+            geom_line(aes(x=x_gam,y=y_gam),linetype="dashed")+
+            ylab("Density")+
+            ylim(c(0,ymax))
+        })
+      }else if(req(input$Button) == 'Poisson'){
+        output$TableOut <- renderTable({
+          DF_pois
+        },rownames=T)
+        output$Histo <- renderPlot({
+          ggplot(hist_dat,aes(x=Variable)) + geom_histogram(binwidth=1,center=0,aes(y=after_stat(density)))+
+            geom_line(aes(x=x_pois,y=y_pois),linetype="dashed")+
+            ylab("Density")+
+            ylim(c(0,ymax))
+        })
+      }else if(req(input$Button) == 'Negative Binomial'){
+        output$TableOut <- renderTable({
+          DF_nb
+        },rownames=T)
+        if(size<0|prob<0|prob>1){
+          output$Histo <- renderPlot({
+            ggplot(hist_dat,aes(x=Variable)) + geom_histogram(binwidth=1,center=0,aes(y=after_stat(density)))+
+              ylab("Density")+
+              ylim(c(0,ymax))
+          })
+        }else{
+          output$Histo <- renderPlot({
+            ggplot(hist_dat,aes(x=Variable)) + geom_histogram(binwidth=1,center=0,aes(y=after_stat(density)))+
+              geom_line(aes(x=x_nb,y=y_nb),linetype="dashed")+
+              ylab("Density")+
+              ylim(c(0,ymax))
+          })
+        }
+      }else if(req(input$Button) == 'Beta-Binomial'){
+        output$TableOut <- renderTable({
+          DF_bb
+        },rownames=T)
+        output$Histo <- renderPlot({
+          ggplot(hist_dat,aes(x=Variable)) + geom_histogram(binwidth=bwd,center=0,aes(y=after_stat(density)))+
+            geom_line(aes(x=x_bb,y=y_bb),linetype="dashed")+
+            ylab("Density")+
+            ylim(c(0,ymax))
+        })
+      }else if(req(input$Button) == 'Binomial'){
+        output$TableOut <- renderTable({
+          DF_b
+        },rownames=T)
+        output$Histo <- renderPlot({
+          ggplot(hist_dat,aes(x=Variable)) + geom_histogram(bins=2,aes(y=after_stat(density)))+
+            geom_line(aes(x=x_b,y=y_b),linetype="dashed")+
+            ylab("Density")+
+            ylim(c(0,1))
+        })
+      }
+      
+      
+    })
+    
+    session$onSessionEnded(function() { stopApp() })
+    
+  }
+  shinyApp(ui, server)
+}
+
+#Depends on shiny, shinyMatrix
+
+#X is a data matrix
+
+#Intended for use with Desc_Clust function,
+#this function pulls up a shiny widget to properly format a  key
+
+Key_Specify=function(X){
+  m=data.frame(matrix(nrow=ncol(X),
+                      ncol=5))
+  colnames(m)=c("Subsection","Subsection Order Number","Variable Name","Distribution","Rounding Digits")
+  row.names(m)=c(names(X))
+  m=as.matrix(m)
+  
+  ui <- fluidPage(
+    
+    titlePanel("Input information formatting the summary table"),
+    mainPanel(
+      width=20,
+      tags$h5(strong("Distribution must be one of the following: Normal, Binomial, Poisson, or Exponnenetial")),
+      matrixInput("sample",value = m,
+                  rows = list(extend = FALSE),
+                  cols = list(names = TRUE)),
+      actionButton(inputId = "go",label = "Display Backup Code"),
+    ),
+  )
+  server <- function(input, output, session) {  
+    data <- observeEvent(input$go, {
+      all={input$sample}
+      key <<-all
+    })
+    
+    text <- observeEvent(input$go, {
+      for(p in 1:nrow(key)){
+        if(p==1){
+          out1=paste("key=cbind(c('",key[p,1],"',",sep="")
+          out2=paste("c('",key[p,2],"',",sep="")
+          out3=paste("c('",key[p,3],"',",sep="")
+          out4=paste("c('",key[p,4],"',",sep="")
+          out5=paste("c('",key[p,5],"',",sep="")
+        }else if(p<nrow(key)){
+          out1=c(out1,paste("'",key[p,1],"',",sep=""))
+          out2=c(out2,paste("'",key[p,2],"',",sep=""))
+          out3=c(out3,paste("'",key[p,3],"',",sep=""))
+          out4=c(out4,paste("'",key[p,4],"',",sep=""))
+          out5=c(out5,paste("'",key[p,5],"',",sep=""))
+        }else{
+          out1=c(out1,paste("'",key[p,1],"'),",sep=""))
+          out2=c(out2,paste("'",key[p,2],"'),",sep=""))
+          out3=c(out3,paste("'",key[p,3],"'),",sep=""))
+          out4=c(out4,paste("'",key[p,4],"'),",sep=""))
+          out5=c(out5,paste("'",key[p,5],"'))",sep=""))
+        }
+      }
+      
+      
+      cat(cat("","","Copy and paste the following into R to backup your work!",
+              "","",sep='\n'),cat(cat(out1,'\n'),cat(out2,'\n'),cat(out3,'\n'),cat(out4,'\n'),cat(out5,'\n'),sep='\n'),sep='\n')
+      
+    })
+    
+    session$onSessionEnded(function() { stopApp() })
+    
+  }
+  shinyApp(ui, server)
+  
+}
+
+#Works in Base R
+
+#X is a dataset, for which factors will be converted into dummy codes
+
+
+convert_X=function(X){
+  id=1
+  col=NULL
+  for(p in 1:ncol(X)){
+    if(is.numeric(X[,p])==T){
+      col=cbind(col,X[,p])
+      if(is.null(names(X[,p]))){
+        nam=paste("X",id,sep="")
+      }else{
+        nam=names(X[,p])
+      }
+      if(p==1){
+        colnames(col)=nam
+      }else{
+        colnames(col)=c(colnames(col)[1:(ncol(col)-1)],nam)
+      }
+    }else{
+      X[,p]=as.factor(X[,p])
+      K=length(levels(X[,p]))
+      for(k in 1:K){
+        bin_k=ifelse(X[,p]==levels(X[,p])[k],1,0)
+        col=cbind(col,bin_k)
+        if(is.null(names(X[,p]))){
+          nam=paste("X",id,"_",levels(X[,p])[k],sep="")
+        }else{
+          nam=paste(names(X[,p]),"_",levels(X[,p])[k],sep="")
+        }
+        if(p==1&k==1){
+          colnames(col)=nam
+        }else{
+          colnames(col)=c(colnames(col)[1:(ncol(col)-1)],nam)
+        }
+      }
+    }
+    id=id+1
+  }
+  return(col)
+}
+
+
+#Depends on shiny, shinyMatrix
+
+#X is a data matrix
+
+#Intended for use with Desc_Clust function,
+#this function pulls up a shiny widget to properly format a  key
+
+Key_Specify_Emp=function(X){
+  X2=convert_X(X)
+  m=data.frame(matrix(nrow=ncol(X2),
+                      ncol=3))
+  colnames(m)=c("Subsection Name","Variable Name","Rounding Digits")
+  
+  rnam=NULL
+  for(p in 1:ncol(X)){
+    if(is.numeric(X[,p])){
+      rnam=c(rnam,names(X)[p])
+    }else{
+      X[,p]=as.factor(X[,p])
+      for(q in 1:length(levels(X[,p]))){
+        rnam=c(rnam,paste(names(X)[p],"_",levels(X[,p])[q],sep=""))
+      }
+    }
+  }
+  
+  row.names(m)=c(rnam)
+  m=as.matrix(m)
+  
+  ui <- fluidPage(
+    
+    titlePanel("Input information formatting the summary table"),
+    mainPanel(
+      width=20,
+      matrixInput("sample",value = m,
+                  rows = list(extend = FALSE),
+                  cols = list(names = TRUE)),
+      actionButton(inputId = "go",label = "Display Backup Code"),
+    ),
+  )
+  server <- function(input, output, session) {  
+    data <- observeEvent(input$go, {
+      all={input$sample}
+      key <<-all
+    })
+    
+    text <- observeEvent(input$go, {
+      for(p in 1:nrow(key)){
+        if(p==1){
+          out1=paste("key=cbind(c('",key[p,1],"',",sep="")
+          out2=paste("c('",key[p,2],"',",sep="")
+          out3=paste("c('",key[p,3],"',",sep="")
+        }else if(p<nrow(key)){
+          out1=c(out1,paste("'",key[p,1],"',",sep=""))
+          out2=c(out2,paste("'",key[p,2],"',",sep=""))
+          out3=c(out3,paste("'",key[p,3],"',",sep=""))
+        }else{
+          out1=c(out1,paste("'",key[p,1],"'),",sep=""))
+          out2=c(out2,paste("'",key[p,2],"'),",sep=""))
+          out3=c(out3,paste("'",key[p,3],"'))",sep=""))
+        }
+      }
+      
+      
+      cat(cat("","","Copy and paste the following into R to backup your work!",
+              "","",sep='\n'),cat(cat(out1,'\n'),cat(out2,'\n'),cat(out3,'\n')))
+      
+    })
+    
+    session$onSessionEnded(function() { stopApp() })
+    
+  }
+  shinyApp(ui, server)
+  
+}
+
+
+#Works in base R
+
+#group is a vector of cluster identities
+
+#data is the raw data to be summarized in the table (no extra data allowed)
+
+#key is a P x 3 key for the data where the first column specifies subsection labels,
+#the second specifies the variable names,
+#and the third specifies the number of digits to round to
+
+#alpha determines type one error level for confidence intervals
+
+#boot_num is a single number or a P lenghth vector
+#specifying the number of bootstrap iterations to run for each variable
+
+#clust_plot is either "PCA" to create a PCA plot or
+#a vector of two variables to plot as X and Y axes by group
+
+#t is either a moment in the data to estimate or a function to perform
+#in terms of X at each bootstrap iteration
+
+#diag_plots is logical, if TRUE traceplots and historgrams of bootstrap samples
+#will be generated
+
+#imp is logical, if TRUE missing data will be imputed at each bootstrap iteration
+
+#seed is a random number seed
+
+#leg_location is a graphical parameter for where to put the legend on the generated plot
+
+desc_clust_emp=function(data,
+                        key,
+                        group,
+                        alpha=0.05,
+                        boot_num=250,
+                        clust_plot="PCA",
+                        t=1,
+                        diag_plots=F,
+                        imp=T,
+                        seed=999,
+                        leg_location="bottomleft"){
+  X=data
+  Q=length(unique(group))
+  
+  if(length(boot_num)==1){
+    boot_num=rep(boot_num,Q)
+  }else if(length(boot_num)!=Q){
+    note=paste("Number of bootstrap samples (boot_num) must be equal to the number of groups (boot_num inputs = ",length(boot_num),", groups = ",Q,")! Assuming for all groups the largest value, ",max(boot_num),".",sep="")
+    boot_num=rep(max(boot_num),Q)
+    warning(note)
+  }
+  
+  fact_ID=NULL
+  for(p in 1:ncol(X)){
+    if(is.factor(X[,p])){
+      fact_ID=c(fact_ID,rep(1,length(levels(X[,p]))))
+    }else{
+      fact_ID=c(fact_ID,0)
+    }
+  }
+  
+  X2=convert_X(X)
+  M=LL=UL=Boot=MCSE=matrix(nrow=ncol(X2),ncol=Q)
+  alpha=ifelse(alpha>1,alpha/100,alpha)
+  freq_q=NULL
+  THETA=list()
+  for(q in 1:Q){
+    
+    print(noquote(paste("Beginning bootstrap estimation for group ",q,sep="")))
+    
+    X_q=X[(group==unique(group)[q]),]
+    freq_q=c(freq_q,nrow(X_q))
+    B=boot_num[q]
+    theta=matrix(nrow=B,ncol=ncol(X2))
+    for(b in 1:B){
+      n=nrow(X_q)
+      set.seed(seed*b)
+      BS_all=X_q[round(runif(n)*n,0),]
+      
+      if(imp==T&sum(sum(is.na(X_q)))>0){
+        BS_all2=convert_X(complete(mice(BS_all,m=1,seed=seed*b,print=F)))
+      }else{
+        BS_all2=convert_X(BS_all)
+      }
+      for(p in 1:ncol(X2)){
+        BS=BS_all2[,p]
+        if(t==1|t=="Mean"|t=="mean"|t=="M"|t=="m"|t=="Average"|t=="average"|t=="A"|t=="a"){
+          if(fact_ID[p]==1){
+            theta[b,p]=c(mean(BS,na.rm=T)*100)
+          }else{
+            theta[b,p]=c(mean(BS,na.rm=T))
+          }
+        }else if(t=="SD"|t=="sd"|t=="Sd"|t=="Standard Deviation"|t=="Standard deviation"|t=="standard deviation"|t=="s"){
+          theta[b,p]=c(sd(BS,na.rm=T))
+        }else if(t=="Skew"|t=="skew"|t=="Skewness"|t=="skewness"){
+          theta[b,p]=c(skewness(BS,na.rm=T))
+        }else if(t=="Kurtosis"|t=="kurtosis"|t=="Kurt"|t=="kurt"|t=="K"|t=="k"){
+          theta[b,p]=c(kurtosis(BS,na.rm=T))
+        }else if(is.numeric(t)){
+          theta[b,p]=c(mean((BS-mean(BS,na.rm=T))^t))
+        }else{
+          proc=function(x,FUN){
+            return(FUN(x))
+            theta[b,p]=c(theta,proc(theta,t))
+          }
+        }
+        
+      }
+      
+      THETA[[q]]=theta
+      
+      pct=unique(round(seq(0,B,len=11),0))
+      if(b%in%pct){
+        print(noquote(paste(round(b/B*100,0),"%")))
+      }
+    }
+    
+    for(p in 1:ncol(theta)){
+      if(sum(is.na(theta[,p]))==length(theta[,p])){
+        M[p,q]=NA
+        LL[p,q]=NA
+        UL[p,q]=NA
+        Boot[p,q]=B
+        MCSE[p,q]=NA
+      }else{
+        M[p,q]=quantile(theta[,p],prob=c(0.5),na.rm=T)
+        LL[p,q]=quantile(theta[,p],prob=c((alpha)/2),na.rm=T)
+        UL[p,q]=quantile(theta[,p],prob=c(1-(alpha)/2),na.rm=T)
+        Boot[p,q]=B
+        MCSE[p,q]=sd(theta[,p])/sqrt(B)
+      }
+    }
+  }
+  
+  if(diag_plots==T){
+    for(q in 1:Q){
+      for(p in 1:ncol(theta)){
+        par(mfrow=c(1,2))
+        lab1=paste("Traceplot of ",key[p,2],", Group ",q," Estimate",sep="")
+        lab2=paste("Histogram of ",key[p,2],", Group ",q," Estimate",sep="")
+        lab3=paste(key[p,2]," in Group ",q,sep="")
+        plot(THETA[[q]][,p],type="l",main=lab1,xlab="Iteration",ylab=lab3)
+        plot(density(THETA[[q]][,p]),main=lab2,xlab=lab3,ylab="Frequency")
+        par(mfrow=c(1,1))
+      }
+    }
+  }
+  
+  
+  sub_num=length(unique(key[,1]))
+  tab_M=tab_LL=tab_UL=matrix(nrow=(ncol(X2)+sub_num),ncol=Q)
+  r=1
+  row_names=NULL
+  fact_ID2=NULL
+  for(s in 1:sub_num){
+    row_s=sum(key[,1]==unique(key[,1])[s])
+    insert_M=matrix(nrow=(row_s+1),ncol=Q)
+    insert_M[1,]=c(rep("",Q))
+    insert_M[2:(row_s+1),]=M[(r-length(1:s)+1):(r+row_s-length(1:s)),]
+    tab_M[r:(r+row_s),]=insert_M
+    
+    insert_LL=matrix(nrow=(row_s+1),ncol=Q)
+    insert_LL[1,]=c(rep("",Q))
+    insert_LL[2:(row_s+1),]=LL[(r-length(1:s)+1):(r+row_s-length(1:s)),]
+    tab_LL[r:(r+row_s),]=insert_LL
+    
+    insert_UL=matrix(nrow=(row_s+1),ncol=Q)
+    insert_UL[1,]=c(rep("",Q))
+    insert_UL[2:(row_s+1),]=UL[(r-length(1:s)+1):(r+row_s-length(1:s)),]
+    tab_UL[r:(r+row_s),]=insert_UL
+    
+    row_names=c(row_names,unique(key[,1])[s],key[(key[,1]==unique(key[,1])[s]),2])
+    fact_ID2=c(fact_ID2,0,fact_ID[(key[,1]==unique(key[,1])[s])])
+    
+    r=r+row_s+1
+  }
+  
+  col_names=paste("Group ",1:Q,sep="")
+  tab=rbind(tab_M,NA)
+  r=1
+  for(p in 1:nrow(tab)){
+    if(p==nrow(tab)){
+      tab[p,]=c(freq_q)
+    }else{
+      for(q in 1:ncol(tab)){
+        if(t==1|t=="Mean"|t=="mean"|t=="M"|t=="m"|t=="Average"|t=="average"|t=="A"|t=="a"){
+          tab[p,q]=ifelse(tab[p,q]=="","",
+                          ifelse(fact_ID2[p]==1,paste(round(as.numeric(tab_M[p,q]),as.numeric(key[r,3])),"% [",round(as.numeric(tab_LL[p,q]),as.numeric(key[r,3])),"%, ",round(as.numeric(tab_UL[p,q]),as.numeric(key[r,3])),"%]",sep=""),
+                                 paste(round(as.numeric(tab_M[p,q]),as.numeric(key[r,3]))," [",round(as.numeric(tab_LL[p,q]),as.numeric(key[r,3])),", ",round(as.numeric(tab_UL[p,q]),as.numeric(key[r,3])),"]",sep="")))
+        }else{
+          tab[p,q]=ifelse(tab[p,q]=="","",
+                          ifelse(fact_ID2[p]==1,paste(round(as.numeric(tab_M[p,q]),as.numeric(key[r,3]))," [",round(as.numeric(tab_LL[p,q]),as.numeric(key[r,3])),", ",round(as.numeric(tab_UL[p,q]),as.numeric(key[r,3])),"]",sep=""),
+                                 paste(round(as.numeric(tab_M[p,q]),as.numeric(key[r,3]))," [",round(as.numeric(tab_LL[p,q]),as.numeric(key[r,3])),", ",round(as.numeric(tab_UL[p,q]),as.numeric(key[r,3])),"]",sep="")))
+
+        }
+      }
+      if(is.na(tab[p,1])){
+        r=r+1
+      }else if(tab[p,1]==""){
+        r=r
+      }else{
+        r=r+1
+      }
+    }
+  }
+  
+  row_names=c(row_names,"Group Frequencies")
+  
+  tab=data.frame(tab)
+  row.names(tab)=c(row_names)
+  colnames(tab)=c(col_names)
+  
+  print(tab)
+  
+  if(length(clust_plot)==1){
+    if(clust_plot=="PCA"|clust_plot=="pca"){
+      flag_pca=1
+    }else{
+      flag_pca=0
+    }
+  }else{
+    flag_pca=0
+  }
+  
+  if(flag_pca==1){
+    rho_hat=cor(X2,use="pairwise.complete.obs")
+    if(sum(sum(is.na(rho_hat)))>0){
+      warning("Problem estimating correlation matrix, PCA plot not created")
+    }else{
+      w1=as.matrix(sqrt(eigen(rho_hat)$values[1])*eigen(rho_hat)$vectors[,1])
+      w2=as.matrix(sqrt(eigen(rho_hat)$values[2])*eigen(rho_hat)$vectors[,2])
+      X_z=X2
+      for(p in 1:ncol(X2)){
+        X_z[,p]=(X2[,p]-mean(X2[,p],na.rm=T))/sd(X2[,p],na.rm=T)
+      }
+      
+      X_z=data.frame(X_z)
+      
+      for(p in 1:ncol(X2)){
+        for(i in na.omit(ifelse((rowSums(is.na(X_z))!=0)==T,1:nrow(X_z),NA))){
+          X_z[i,p]=0
+        }
+      }
+      
+      row_obs=ncol(X2)-rowSums(is.na(X2))
+      row_obs=ifelse(row_obs==0,1,row_obs)
+      PCA1=c(t(w1)%*%t(X_z)/row_obs)
+      PCA2=c(t(w2)%*%t(X_z)/row_obs)
+      
+      g_id=0
+      g_col=1:length(unique(group))
+      for(g in g_col){
+        g_id=ifelse(group==unique(group)[g],g,g_id)
+      }
+      
+      plot(x=PCA1,y=PCA2,main="PCA Plot of Groups",xlab="PCA 1",ylab="PCA 2")
+      for(p in 1:nrow(X)){
+        points(x=PCA1[p],y=PCA2[p],col=rainbow(max(g_id))[g_id[p]])
+      }
+      
+      legend(leg_location,
+             legend=paste("Group",1:Q),
+             col=rainbow(Q),
+             lty=1)
+      
+    }
+  }else if(length(clust_plot)==2){
+    if(is.factor(X[,clust_plot[1]])|is.factor(X[,clust_plot[1]])){
+      warning("Categorical variables not available for cluster plot, consider changing variable selection or specifying as 'PCA'")
+    }else{
+      x1=X[,clust_plot[1]]
+      x2=X[,clust_plot[2]]
+      plot_nam=paste("Plot of",names(X)[clust_plot[2]],"by",ylab=names(X)[clust_plot[1]],"Across Groups")
+      plot(x=x1,y=x2,main=plot_nam,xlab=names(X)[clust_plot[1]],ylab=names(X)[clust_plot[2]])
+      
+      g_id=0
+      g_col=1:length(unique(group))
+      for(g in g_col){
+        g_id=ifelse(group==unique(group)[g],g,g_id)
+      }
+      
+      for(p in 1:nrow(X)){
+        points(x=x1[p],y=x2[p],col=rainbow(max(g_id))[g_id[p]])
+      }
+      legend(leg_location,
+             legend=paste("Group",1:Q),
+             col=rainbow(Q),
+             lty=1)
+      
+    }
+  }else if(is.null(clust_plot)|is.na(clust_plot)){
+    
+  }else{
+    warning("Cluster plot not rendered, please specify the variable columns you would like to appear on the X and Y axes, or specify 'PCA' to render a PCA plot")
+  }
+  
+  out=list()
+  out$theta_hat=THETA
+  out$M=M
+  out$LL=LL
+  out$UL=UL
+  out$Boot=Boot
+  out$MCSE=MCSE
+  out$Table=tab
+  
+  return(out)
+}
+
+
+
+
+
+
+
+
+
+
+#Relies on GGplot, msir
+
+#mod is a fitted model object from lm, glm, lmer, glmer, or glmmTMB
+
+#Est_Names is optional, provides names to each estimate
+
+#L is a linear combination patrix with as many columns as estimates where the rows
+#relate each coefficient in the model object to the estimate of interest
+
+#L_zi is required for glmmTMB models with zero inflation,
+#an L matrix for the zer inflation model
+
+
+df_L=function(mod,
+              Est_Names=NULL,
+              L=NULL,
+              L_zi=NULL,
+              plots=T){
+  
+  
+  if("EnvStats" %in% (.packages())){
+    detach("package:EnvStats", unload = TRUE)
+    env_flag=1
+  }else{
+    env_flag=0
+  }
+
+
+  s=summary(mod)
+  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
+  glme4=ifelse(lme4==1,ifelse(s$objClass[1]=="glmerMod",1,0),0)
+  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
+  glm=ifelse(lme4+glmmTMB==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  lm=ifelse(glm==1,ifelse(is.null(summary(mod)$family[[1]]),1,0),0)
+  
+  
+  
+  x=model.frame(mod)
+  
+  if(glmmTMB==1){
+    family=summary(mod)$family
+    link=summary(mod)$link
+  }else if(lm==1){
+    family="gaussian"
+    link="identity"
+  }else if(glm==1){
+    family=summary(mod)$family[[1]]
+    link=summary(mod)$family[[2]]
+  }else if(glme4==1){
+    family=summary(mod)$family
+    link=summary(mod)$link
+  }else if(lme4==1){
+    family="gaussian"
+    link="identity"
+  }
+  
+  
+  breaks=round(seq(0,nrow(x),length=11),0)
+  print(noquote("Beginning influence analysis (this may take some time)"))
+  if(glm==1){
+    if(is.null(L)){
+      L=matrix(0,ncol=length(mod$coefficients),nrow=length(mod$coefficients))
+      diag(L)=1
+      Est_Names=c(names(mod$coefficients))
+    }
+    
+    dfl=matrix(ncol=ncol(L)+1,nrow=nrow(x))
+    
+    if(family=="binomial"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glm(mod$call,
+               data=x_i,family=binomial(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response"),(t(L)%*%mod$coefficients-t(L)%*%m2$coefficients)/t(L)%*%mod$coefficients)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="gaussian"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glm(mod$call,
+               data=x_i,family=gaussian(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response"),(t(L)%*%mod$coefficients-t(L)%*%m2$coefficients)/t(L)%*%mod$coefficients)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="Gamma"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glm(mod$call,
+               data=x_i,family=Gamma(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response"),(t(L)%*%mod$coefficients-t(L)%*%m2$coefficients)/t(L)%*%mod$coefficients)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="inverse.gaussian"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glm(mod$call,
+               data=x_i,family=inverse.gaussian(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response"),(t(L)%*%mod$coefficients-t(L)%*%m2$coefficients)/t(L)%*%mod$coefficients)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="poisson"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glm(mod$call,
+               data=x_i,family=poisson(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response"),(t(L)%*%mod$coefficients-t(L)%*%m2$coefficients)/t(L)%*%mod$coefficients)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="quasibinomial"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glm(mod$call,
+               data=x_i,family=quasibinomial(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response"),(t(L)%*%mod$coefficients-t(L)%*%m2$coefficients)/t(L)%*%mod$coefficients)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="quasipoisson"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glm(mod$call,
+               data=x_i,family=quasipoisson(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response"),(t(L)%*%mod$coefficients-t(L)%*%m2$coefficients)/t(L)%*%mod$coefficients)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else{
+      warning("Family not currently supported for this function")
+    }
+  }else if(lme4==1){
+    
+    if(is.null(L)){
+      L=matrix(0,ncol=length(summary(mod)$coefficients[,1]),
+               nrow=length(summary(mod)$coefficients[,1]))
+      diag(L)=1
+      Est_Names=c(names(summary(mod)$coefficients[,1]))
+    }
+    
+    dfl=matrix(ncol=ncol(L)+1,nrow=nrow(x))
+    
+    if(family=="binomial"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmer(summary(mod)$call,
+                 data=x_i,family=binomial(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%summary(mod)$coefficients[,1]-t(L)%*%summary(m2)$coefficients[,1])/t(L)%*%summary(mod)$coefficients[,1])
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="gaussian"){
+      if(link=="identity"){
+        for(i in 1:nrow(x)){
+          x_i=x[-i,]
+          m2=lmer(summary(mod)$call,
+                  data=x_i)
+          dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%summary(mod)$coefficients[,1]-t(L)%*%summary(m2)$coefficients[,1])/t(L)%*%summary(mod)$coefficients[,1])
+          if(i%in%breaks){
+            print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+          }
+        }
+      }else{
+        for(i in 1:nrow(x)){
+          x_i=x[-i,]
+          m2=glmer(summary(mod)$call,
+                   data=x_i,family=gaussian(link=make.link(link)))
+          dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%summary(mod)$coefficients[,1]-t(L)%*%summary(m2)$coefficients[,1])/t(L)%*%summary(mod)$coefficients[,1])
+          if(i%in%breaks){
+            print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+          }
+        }
+      }
+    }else if(family=="Gamma"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmer(summary(mod)$call,
+                 data=x_i,family=Gamma(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%summary(mod)$coefficients[,1]-t(L)%*%summary(m2)$coefficients[,1])/t(L)%*%summary(mod)$coefficients[,1])
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="inverse.gaussian"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmer(summary(mod)$call,
+                 data=x_i,family=inverse.gaussian(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%summary(mod)$coefficients[,1]-t(L)%*%summary(m2)$coefficients[,1])/t(L)%*%summary(mod)$coefficients[,1])
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="poisson"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmer(summary(mod)$call,
+                 data=x_i,family=poisson(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%summary(mod)$coefficients[,1]-t(L)%*%summary(m2)$coefficients[,1])/t(L)%*%summary(mod)$coefficients[,1])
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="quasibinomial"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmer(summary(mod)$call,
+                 data=x_i,family=quasibinomial(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%summary(mod)$coefficients[,1]-t(L)%*%summary(m2)$coefficients[,1])/t(L)%*%summary(mod)$coefficients[,1])
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="quasipoisson"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmer(summary(mod)$call,
+                 data=x_i,family=quasipoisson(link=make.link(link)))
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%summary(mod)$coefficients[,1]-t(L)%*%summary(m2)$coefficients[,1])/t(L)%*%summary(mod)$coefficients[,1])
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else{
+      warning("Family not currently supported for this function")
+    }
+  }
+  if(glmmTMB==1){
+    if(is.null(L)){
+      dim_L=length(summary(mod)$coefficients$cond[,1])+
+        length(summary(mod)$coefficients$zi[,1])
+      L=matrix(0,ncol=dim_L,nrow=dim_L)
+      diag(L)=1
+      Est_Names=c(names(summary(mod)$coefficients$cond[,1]))
+      
+      if(mod$call$ziformula=="~0"){
+      }else{
+        Est_Names=c(paste(names(summary(mod)$coefficients$cond[,1]),"_mean",sep=""),
+                    paste(names(summary(mod)$coefficients$zi[,1]),"_ZI",sep=""))
+      }
+    }
+    
+    dfl=matrix(ncol=ncol(L)+1,nrow=nrow(x))
+    
+    if(glmmTMB==1&mod$call$ziformula!="~0"&is.null(L_zi)){
+      warning("For glmmTMB models, L_zi must be specified as a separate matrix")
+    }
+    bm=summary(mod)$coefficients$cond[,1]
+    bzi=summary(mod)$coefficients$zi[,1]
+    b=c(bm,bzi)
+    if(is.null(bzi)){
+      L=L
+    }else{
+      L=rbind(L,L_zi)
+    }
+    
+    
+    if(family=="nbinom2"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="nbinom2"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="nbinom1"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="nbinom1"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="compois"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="compois"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="truncated_compois"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="truncated_compois"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="genpois"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="genpois"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="truncated_genpois"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="truncated_genpois"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="truncated_poisson"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="truncated_poisson"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="truncated_nbinom2"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="truncated_nbinom2"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="truncated_nbinom1"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="truncated_nbinom1"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="beta_family"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="beta_family"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="betabinomial"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="betabinomial"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="tweedie"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="tweedie"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="ziGamma"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="ziGamma"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="t_family"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="t_family"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="ordbeta"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="ordbeta"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="gaussian"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="gaussian"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="Gamma"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="Gamma"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="beta"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="beta"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="binomial"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="binomial"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else if(family=="poisson"){
+      for(i in 1:nrow(x)){
+        x_i=x[-i,]
+        m2=glmmTMB(mod$call$formula,
+                   ziformula=mod$call$ziformula,
+                   data=x_i,family="poisson"(link=make.link(link)))
+        bm_i=summary(m2)$coefficients$cond[,1]
+        bzi_i=summary(m2)$coefficients$zi[,1]
+        b_i=c(bm_i,bzi_i)
+        dfl[i,]=c(predict(m2,newdata=x[i,],type="response",allow.new.levels=T),(t(L)%*%b-t(L)%*%b_i)/t(L)%*%b)
+        if(i%in%breaks){
+          print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+        }
+      }
+    }else{
+      warning("Family not currently supported for this function")
+    }
+    
+  }
+  
+  dfl2=dfl[,2:ncol(dfl)]
+  outtab=matrix(ncol=ncol(dfl2),nrow=10)
+  
+  for(q in 1:ncol(dfl2)){
+    for(p in 1:5){
+      outtab[p,q]=paste(c(which(dfl2[,q]==head(sort(dfl2[,q],decreasing=T),5)[p])),collapse=", ")
+    }
+    for(p in 1:5){
+      outtab[(p+5),q]=paste(c(which(dfl2[,q]==head(sort(dfl2[,q],decreasing=F),5)[p])),collapse=", ")
+    }
+  }
+  
+  outtab=data.frame(rbind("",outtab[1:5,],"",outtab[6:10,]))
+  if(is.null(Est_Names)){
+    colnames(outtab)=1:ncol(outtab)
+    ggnam=paste("Estimate",1:ncol(outtab))
+  }else if(length(Est_Names)!=ncol(outtab)){
+    colnames(outtab)=1:ncol(outtab)
+    ggnam=paste("Estimate",1:ncol(outtab))
+  }else{
+    colnames(outtab)=Est_Names
+    ggnam=Est_Names
+  }
+  rownames(outtab)=c("Biggest Increases",paste(1:5,"(+)"),
+                     "Biggest Decreases",paste(1:5,"(-)"))
+  blurb="The row IDs resulting in the largest increases and decreases in estimates:"
+  blurb=data.frame(rbind(blurb,""))
+  colnames(blurb)=c("")
+  rownames(blurb)=c(""," ")
+  
+  if(plots==T){
+    print(noquote(blurb))
+    
+    print(noquote(outtab))
+    
+    for(p in 1:ncol(dfl2)){
+      h=ggplot(data.frame(dfl2[,p]*100))+
+        geom_point(aes(x=1:nrow(dfl2),y=dfl2[,p]*100))+
+        geom_segment(aes(x=1:nrow(dfl2),xend=1:nrow(dfl2),y=0,yend=dfl2[,p]*100),color="cornflowerblue")+
+        xlab("Row ID")+
+        ylab("Increase or Decrease in Estimate (%)")+
+        ggtitle(paste("Influence of Individual Datapoints on",ggnam[p]))+
+        ylim(min(dfl2)*110,max(dfl2)*110)
+      print(h)
+      readline("Press enter to proceed to the next plot")
+    }
+    
+  }
+  
+  dfl=cbind(c(model.frame(mod)[,1]),dfl)
+  dfl=data.frame(dfl)
+  if(is.null(Est_Names)){
+    colnames(dfl)=c(names(model.frame(mod))[1],paste(names(model.frame(mod))[1],"_LOO",sep=""),1:ncol(dfl2))
+  }else if(length(Est_Names)!=ncol(outtab)){
+    colnames(dfl)=c(names(model.frame(mod))[1],paste(names(model.frame(mod))[1],"_LOO",sep=""),1:ncol(dfl2))
+  }else{
+    colnames(dfl)=c(names(model.frame(mod))[1],paste(names(model.frame(mod))[1],"_LOO",sep=""),Est_Names)
+  }
+  blurb=paste("Leave One Out R2 = ",round(cor(dfl[,1],dfl[,2],use="pairwise.complete.obs")^2,3),sep="")
+  blurb=data.frame(rbind(blurb,""))
+  colnames(blurb)=c("")
+  rownames(blurb)=c(""," ")
+  
+  print(noquote(blurb))
+
+  out=list(df_L=dfl)
+  
+  if(env_flag==1){
+    warn = getOption("warn")
+    options(warn=-1)
+    suppressMessages(library(EnvStats))
+    options(warn=warn)
+  }
+
+  return(dfl)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
