@@ -1,7 +1,6 @@
 
-
 check=c("kamila","EnvStats","tidyverse","shiny","shinyMatrix",
-        "shinyRadioMatrix","psych","ggplot2","survival","mice")
+        "shinyRadioMatrix","psych","ggplot2","survival")
 flag=0
 for(p in 1:length(check)){
   if(check[p]%in%row.names(installed.packages())){
@@ -26,7 +25,6 @@ if(flag==0){
   library(psych)
   library(ggplot2)
   library(survival)
-  library(mice)
 }
 
 
@@ -272,7 +270,7 @@ Clust_Imp=function(con,
       RIV=((1+1/s)*Vb)/Vw
       FMI=(RIV+(2/(df+3)))/(RIV+1)
       RE=1/(1+(FMI/s))
-
+      
       mtext(paste("Critical RE = ",RE_tol,"\n RE = ",round(min(RE),3)),side=3)
       done2=ifelse(min(RE)<RE_tol,0,1)
       if(done2==1){
@@ -555,6 +553,9 @@ Est_Mod=function(mod=NA,
                  Print_L=T,
                  Print_Any=T,
                  x_range=NULL,
+                 x_type=NULL,
+                 x_name=NULL,
+                 x_design=NULL,
                  x_effects=NULL,
                  x_output=NULL,
                  x_range_breaks=50){
@@ -570,7 +571,7 @@ Est_Mod=function(mod=NA,
     }
     
     if(is.null(x_effects)){
-      print(noquote("Error: x_effects must be specified as a list object with each entry containing three inputs: x variable name, value input in the L matrix, and power of the effect (i.e., 1 if linear, 2 if quadratic, and so on)!"))
+      print(noquote("Error: x_effects must be specified as a list object with each entry containing four inputs: x variable name, value input in the L matrix, numeric information (if power, 1 if linear, 2 if quadratic, and so on; if spline, NA for the main effect, the knot value if spline coefficient), and type of effect (power or spline),!"))
     }
     
     if(is.list(x_effects)==F){
@@ -580,7 +581,6 @@ Est_Mod=function(mod=NA,
     }
   }
   
-    
   L_view=L
   cox=0
   na_sum=ifelse(sum(is.na(beta_raw))>0,0,ifelse(is.matrix(beta_raw),1,ifelse(is.vector(beta_raw),1,0)))+
@@ -592,11 +592,11 @@ Est_Mod=function(mod=NA,
       print(noquote("Error: Either raw information about beta matrix, variance covariance matrix of estimates, and sample size must be provided; or a fitted model object!"))
     }
     s=summary(mod)
-    lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
-    glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
-    cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
-    rma_mv=ifelse(is.null(mod$vi),0,1)
-    glm=ifelse(cox+lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+    lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+    glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+    cox=ifelse("coxph"%in%class(mod),1,0)
+    rma_mv=ifelse("rma"%in%class(mod),1,0)
+    glm=ifelse("lm"%in%class(mod),1,0)
     
     if(glmmTMB==1){
       row.names(L_view)=c(rownames(summary(mod)$coefficients$cond))
@@ -684,6 +684,8 @@ Est_Mod=function(mod=NA,
     coef_nam=coef_nam[2:length(coef_nam)]
     split_text=str_split(coef_nam, ":", simplify = TRUE)
     x_flag=matrix(0,nrow=nrow(L),ncol=ncol(L))
+    x_flag2=matrix(0,nrow=nrow(L),ncol=ncol(L))
+    x_pow=matrix(0,nrow=nrow(L),ncol=ncol(L))
     x_coef=L
   }
   
@@ -691,13 +693,15 @@ Est_Mod=function(mod=NA,
     for(i in 1:length(x_effects)){
       for(j in 1:nrow(L)){
         for(k in 1:ncol(L)){
-          L_view[j,k]=ifelse(x_effects[[i]][1]%in%split_text[j,],
-                             paste(as.numeric(L_view[j,k])/as.numeric(x_effects[[i]][2]),"x",ifelse(x_effects[[i]][3]==1,"",paste("^",x_effects[[i]][3],sep="")),sep=""),
-                             L_view[j,k])
-          x_flag[j,k]=ifelse(x_effects[[i]][1]%in%split_text[j,],as.numeric(x_effects[[i]][3]),x_flag[j,k])
-          x_coef[j,k]=ifelse(x_effects[[i]][1]%in%split_text[j,],
-                             as.numeric(x_coef[j,k])/as.numeric(x_effects[[i]][2]),
-                             x_coef[j,k])
+          if(x_effects[[i]][1]%in%split_text[j,]){
+            L_view[j,k]=ifelse(x_effects[[i]][3]==1,
+                               paste(as.numeric(L_view[j,k])/as.numeric(x_effects[[i]][2]),paste(ifelse(is.na(x_effects[[i]][4]),"",paste("Spline_",x_effects[[i]][4],"_",sep="")),"x",sep=""),sep=""),
+                               paste(as.numeric(L_view[j,k])/as.numeric(x_effects[[i]][2]),paste(ifelse(is.na(x_effects[[i]][4]),"",paste("Spline_",x_effects[[i]][4],"_",sep="")),"x^",x_effects[[i]][3],sep=""),sep=""))
+            x_flag[j,k]=ifelse(is.na(x_effects[[i]][4]),1,as.numeric(x_effects[[i]][4]))
+            x_flag2[j,k]=ifelse(is.na(x_effects[[i]][4]),1,2)
+            x_pow[j,k]=as.numeric(x_effects[[i]][3])
+            x_coef[j,k]=as.numeric(x_coef[j,k])/as.numeric(x_effects[[i]][2])
+          }
         }
       }
     }
@@ -724,31 +728,56 @@ Est_Mod=function(mod=NA,
     if(is.null(x_output)){
       x_output=x_range
     }
-    x_use=seq(x_range[1],x_range[2],length=x_range_breaks)
     Lp=matrix(nrow=nrow(L),ncol=ncol(L)*x_range_breaks)
     split_end=NULL
+    x_use=seq(x_range[1],x_range[2],length=x_range_breaks)
+    knots=c(x_flag[,1])[c(1:nrow(x_flag2))[x_flag2[,1]==2]]
+    spl_nam=coef_nam[c(1:nrow(x_flag2))[x_flag2[,1]==2]]
+    
     p=1
     for(e in 1:ncol(L)){
       for(f in 1:x_range_breaks){
-        x_mult=x_use[f]^x_flag[,e]
-        Lp[,p]=x_coef[,e]*x_mult
-        if(f==x_range_breaks){
-          split_end=c(split_end,p)
+        for(g in 1:nrow(L)){
+          if(coef_nam[g]%in%spl_nam){
+            knot=which(coef_nam[g]==spl_nam)
+            x_mult=ifelse(x_use[f]<knots[knot],0,(x_use[f]-knots[knot])^x_pow[g,1])
+          }else{
+            x_mult=x_use[f]^x_pow[g,1]
+          }
+          Lp[g,p]=x_coef[g,e]*x_mult
+          if(f==x_range_breaks){
+            split_end=c(split_end,p)
+          }
+          if(g==nrow(L)){
+            p=p+1
+          }
         }
-        p=p+1
       }
     }
+    
     L2=matrix(nrow=nrow(L),ncol=ncol(L)*length(x_output))
     p=1
     for(e in 1:ncol(L)){
       for(f in 1:length(x_output)){
-        x_mult=x_output[f]^x_flag[,e]
-        L2[,p]=x_coef[,e]*x_mult
-        p=p+1
+        for(g in 1:nrow(L)){
+          if(coef_nam[g]%in%spl_nam){
+            knot=which(coef_nam[g]==spl_nam)
+            x_mult=ifelse(x_output[f]<knots[knot],0,(x_output[f]-knots[knot])^x_pow[g,1])
+          }else{
+            x_mult=x_output[f]^x_pow[g,1]
+          }
+          L2[g,p]=x_coef[g,e]*x_mult
+          if(f==x_range_breaks){
+            split_end=c(split_end,p)
+          }
+          if(g==nrow(L)){
+            p=p+1
+          }
+        }
       }
     }
-    
   }
+  
   
   
   if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
@@ -1093,6 +1122,7 @@ Est_Mod=function(mod=NA,
     out$x_range_LL=c(LLp)
     out$x_range_UL=c(ULp)
     out$x_range_X=rep(x_use,ncol(L_orig))
+    out$x_range_Chart_L=Lp
     group_id=NULL
     if(ncol(L_orig)!=length(Est_Names)){
       for(i in 1:ncol(L_orig)){
@@ -1757,19 +1787,39 @@ inspect_mods=function(mod=NA,
                       Plots=T,
                       X=NULL){
   
+  if(sum(Plots==T)>0){
+    QQ=T
+    Hist=T
+    X_var=T
+  }else{
+    QQ=F
+    Hist=F
+    X_var=F
+  }
+  if("QQ"%in%Plots|"qq"%in%Plots|"Q-Q"%in%Plots|"q-q"%in%Plots|"Q"%in%Plots|"q"%in%Plots){
+    QQ=T
+  }
+  if("Hist"%in%Plots|"hist"%in%Plots|"Histogram"%in%Plots|"histogram"%in%Plots|"H"%in%Plots|"h"%in%Plots){
+    Hist=T
+  }
+  if("X_Var"%in%Plots|"x_var"%in%Plots|"X_var"%in%Plots|"x_Var"%in%Plots|"X"%in%Plots|"x"%in%Plots|"Var"%in%Plots|"var"%in%Plots|"V"%in%Plots|"v"%in%Plots){
+    X_var=T
+  }
+  
   if(sum(class(mod)=="list")==1){
     num_mods=length(mod)
   }else{
     num_mods=1
   }
-
+  
   if(num_mods==1){
     
     s=summary(mod)
-    lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
-    glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
-    cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
-    glm=ifelse(cox+lme4+glmmTMB==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+    lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+    glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+    cox=ifelse("coxph"%in%class(mod),1,0)
+    rma_mv=ifelse("rma"%in%class(mod),1,0)
+    glm=ifelse("lm"%in%class(mod),1,0)
     
     if(glmmTMB==1){
       res=resid(mod)
@@ -1841,86 +1891,129 @@ inspect_mods=function(mod=NA,
     table[5,]=ifelse(is.na(table[5,]),"NA",table[5,])
     table
     
-    if(Plots==T){
+    
+    if(QQ==T|Hist==T|X_var==T){
       if(cox==1){
-        for(p in 1:ncol(cox.zph(mod)$y)){
-          plot(cox.zph(mod)[p],
-               main="Plot of Schoenfeld Residuals for Cox Regression Model")
-          readline("Press enter to proceed to the next plot")
-        }
-      }else{
-        hist(res,main="Histogram of Residuals",xlab="Residual")
-        readline("Press enter to proceed to the next plot")
-        qqnorm(res)
-        qqline(res)
-        readline("Press enter to proceed to the next plot")
-        X=data.frame(X)
-        for(p in 1:ncol(X)){
-          gg_inf=data.frame(res,X[,p])
-          names(gg_inf)=c("Residual","x")
-          if(x_null==1){
-            if(is.numeric(model.frame(mod)[,(p+1)])){
-              gg_inf[,2]=as.numeric(gg_inf[,2])
-              neg_min=ifelse(min(gg_inf[,2])<0,1,0)
-              neg_max=ifelse(max(gg_inf[,2])<0,1,0)
-              rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
-              rib_y=rep(mean(gg_inf[,1]))
-              rib_lower1=rib_y-2*sd(gg_inf[,1])
-              rib_upper1=rib_y+2*sd(gg_inf[,1])
-              rib_lower2=rib_y-sd(gg_inf[,1])
-              rib_upper2=rib_y+sd(gg_inf[,1])
-              rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
-              names(rib)=c("x_val","upper1","lower1","upper2","lower2")
-              h=ggplot(gg_inf,aes(y=Residual,x=x))+
-                geom_point()+
-                geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
-                geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
-                xlab(names(X)[p])+
-                ggtitle(paste("Plot of Residuals for",names(X)[p]),subtitle="Mean +/- SD")
-              print(h)
-            }else{
-              h=ggplot(gg_inf,aes(y=Residual,x=x))+
-                geom_boxplot()+
-                xlab(names(X)[p])+
-                ggtitle(paste("Plot of Residuals for",names(X)[p]))
-              print(h)
-            }
-          }else{
-            if(is.numeric(gg_inf[,2])){
-              neg_min=ifelse(min(gg_inf[,2])<0,1,0)
-              neg_max=ifelse(max(gg_inf[,2])<0,1,0)
-              rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
-              rib_y=rep(mean(gg_inf[,1]))
-              rib_lower1=rib_y-2*sd(gg_inf[,1])
-              rib_upper1=rib_y+2*sd(gg_inf[,1])
-              rib_lower2=rib_y-sd(gg_inf[,1])
-              rib_upper2=rib_y+sd(gg_inf[,1])
-              rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
-              names(rib)=c("x_val","upper1","lower1","upper2","lower2")
-              h=ggplot(gg_inf,aes(y=Residual,x=x))+
-                geom_point()+
-                geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
-                geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
-                xlab(names(X)[p])+
-                ggtitle(paste("Plot of Residuals for",names(X)[p]),subtitle="Mean +/- SD")
-              print(h)
-          }else{
-              h=ggplot(gg_inf,aes(y=Residual,x=x))+
-                geom_boxplot()+
-                xlab(names(X)[p])+
-                ggtitle(paste("Plot of Residuals for",names(X)[p]))
-              print(h)
-          }
-          }
-
-          if(p==ncol(X)){
-
-          }else{
+        if(X_var==T){
+          for(p in 1:ncol(cox.zph(mod)$y)){
+            plot(cox.zph(mod)[p],
+                 main="Plot of Schoenfeld Residuals for Cox Regression Model")
             readline("Press enter to proceed to the next plot")
           }
-        } 
+        }
+      }else{
+        if(Hist==T){
+          hist(res,main="Histogram of Residuals",xlab="Residual")
+          readline("Press enter to proceed to the next plot")
+        }
+        if(QQ==T){
+          qqnorm(res)
+          qqline(res)
+          readline("Press enter to proceed to the next plot")
+        }
+        if(X_var==T){
+          
+          X=data.frame(X)
+          for(p in 1:ncol(X)){
+            gg_inf=data.frame(res,X[,p])
+            names(gg_inf)=c("Residual","x")
+            if(x_null==1){
+              if(is.numeric(model.frame(mod)[,(p+1)])){
+                gg_inf[,2]=as.numeric(gg_inf[,2])
+                neg_min=ifelse(min(gg_inf[,2])<0,1,0)
+                neg_max=ifelse(max(gg_inf[,2])<0,1,0)
+                rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
+                rib_y=rep(mean(gg_inf[,1]))
+                rib_lower1=rib_y-2*sd(gg_inf[,1])
+                rib_upper1=rib_y+2*sd(gg_inf[,1])
+                rib_lower2=rib_y-sd(gg_inf[,1])
+                rib_upper2=rib_y+sd(gg_inf[,1])
+                rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
+                names(rib)=c("x_val","upper1","lower1","upper2","lower2")
+                h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                  geom_point()+
+                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
+                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
+                  xlab(names(X)[p])+
+                  ggtitle(paste("Plot of Residuals for",names(X)[p]),subtitle="Mean +/- SD")
+                print(h)
+              }else{
+                h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                  geom_boxplot()+
+                  xlab(names(X)[p])+
+                  ggtitle(paste("Plot of Residuals for",names(X)[p]))
+                print(h)
+              }
+            }else{
+              if(is.numeric(gg_inf[,2])){
+                neg_min=ifelse(min(gg_inf[,2])<0,1,0)
+                neg_max=ifelse(max(gg_inf[,2])<0,1,0)
+                rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
+                rib_y=rep(mean(gg_inf[,1]))
+                rib_lower1=rib_y-2*sd(gg_inf[,1])
+                rib_upper1=rib_y+2*sd(gg_inf[,1])
+                rib_lower2=rib_y-sd(gg_inf[,1])
+                rib_upper2=rib_y+sd(gg_inf[,1])
+                rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
+                names(rib)=c("x_val","upper1","lower1","upper2","lower2")
+                h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                  geom_point()+
+                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
+                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
+                  xlab(names(X)[p])+
+                  ggtitle(paste("Plot of Residuals for",names(X)[p]),subtitle="Mean +/- SD")
+                print(h)
+              }else{
+                h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                  geom_boxplot()+
+                  xlab(names(X)[p])+
+                  ggtitle(paste("Plot of Residuals for",names(X)[p]))
+                print(h)
+              }
+            }
+            
+            if(p==ncol(X)){
+              
+            }else{
+              readline("Press enter to proceed to the next plot")
+            }
+          } 
+        }
       }
     }
+    
+    nline_blurb=data.frame("Number lines for interpretation of model fit metrics")
+    colnames(nline_blurb)=""
+    rownames(nline_blurb)=""
+    print(nline_blurb)
+    
+    nline=data.frame(
+      rbind("For the -2LL, AIC, and BIC:                  ",
+            "Better                                  Worse",
+            "<----------|----------|----------|---------->",
+            "(Negative             0             (Positive",
+            "numbers)                             numbers)")
+    )
+    colnames(nline)=""
+    rownames(nline)=c(""," ","  ","   ","    ")
+    print(nline)
+    
+    nline=data.frame(
+      rbind("For Marginal R2:                             ",
+            "Worse                                  Better",
+            "|----------|----------|----------|----------|",
+            "0.00                0.50                 1.00",
+            "                                             ")
+    )
+    colnames(nline)=""
+    rownames(nline)=c(""," ","  ","   ","    ")
+    print(nline)
+    
+    nline_blurb=data.frame("Model Results")
+    colnames(nline_blurb)=""
+    rownames(nline_blurb)=""
+    print(nline_blurb)
+    
     
     
   }else{
@@ -1933,10 +2026,11 @@ inspect_mods=function(mod=NA,
     }
     for(m in 1:num_mods){
       s=summary(mod[[m]])
-      lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
-      glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
-      cox=ifelse("fail"%in%c(names(s)),1,0)
-      glm=ifelse(cox+lme4+glmmTMB==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+      lme4=ifelse("lmerMod"%in%c(class(mod[[m]]))|"glmerMod"%in%c(class(mod[[m]])),1,0)
+      glmmTMB=ifelse("glmmTMB"%in%class(mod[[m]]),1,0)
+      cox=ifelse("coxph"%in%class(mod[[m]]),1,0)
+      rma_mv=ifelse("rma"%in%class(mod[[m]]),1,0)
+      glm=ifelse("lm"%in%class(mod[[m]]),1,0)
       
       
       if(glmmTMB==1){
@@ -2004,88 +2098,128 @@ inspect_mods=function(mod=NA,
       table[5,]=ifelse(is.na(table[5,]),"NA",table[5,])
       table
       
-      if(Plots==T){
+      if(QQ==T|Hist==T|X_var==T){
         if(cox==1){
-          for(p in 1:ncol(cox.zph(mod[[m]])$y)){
-            plot(cox.zph(mod[[m]])[p],
-                 main=paste("Plot of Schoenfeld Residuals for Cox Regression, Model ",m))
-            readline("Press enter to proceed to the next plot")
-          }
-        }else{
-          hist(res,main=paste("Histogram of Residuals for Model ", m,sep=""),xlab="Residual")
-          readline("Press enter to proceed to the next plot")
-          qqnorm(res,main=paste("Normal Q-Q Plot for Model ", m,sep=""))
-          qqline(res)
-          readline("Press enter to proceed to the next plot")
-          X1=data.frame(X[[m]])
-          for(p in 1:ncol(X1)){
-            gg_inf=data.frame(res,X1[,p])
-            names(gg_inf)=c("Residual","x")
-            if(X_flag==1){
-              if(is.numeric(model.frame(mod[[m]])[,p+1])){
-                gg_inf[,2]=as.numeric(gg_inf[,2])
-                neg_min=ifelse(min(gg_inf[,2])<0,1,0)
-                neg_max=ifelse(max(gg_inf[,2])<0,1,0)
-                rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
-                rib_y=rep(mean(gg_inf[,1]))
-                rib_lower1=rib_y-2*sd(gg_inf[,1])
-                rib_upper1=rib_y+2*sd(gg_inf[,1])
-                rib_lower2=rib_y-sd(gg_inf[,1])
-                rib_upper2=rib_y+sd(gg_inf[,1])
-                rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
-                names(rib)=c("x_val","upper1","lower1","upper2","lower2")
-                
-                h=ggplot(gg_inf,aes(y=Residual,x=x))+
-                  geom_point()+
-                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
-                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
-                  xlab(names(X1)[p])+
-                  ggtitle(paste("Plot of Residuals for",names(X1)[p]),subtitle="Mean +/- SD")
-                print(h)
-              }else{
-                h=ggplot(gg_inf,aes(y=Residual,x=x))+
-                  geom_boxplot()+
-                  xlab(names(X1)[p])+
-                  ggtitle(paste("Plot of Residuals for",names(X1)[p]))
-                print(h)
-              }
-            }else{
-              if(is.numeric(gg_inf[,2])){
-                neg_min=ifelse(min(gg_inf[,2])<0,1,0)
-                neg_max=ifelse(max(gg_inf[,2])<0,1,0)
-                rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
-                rib_y=rep(mean(gg_inf[,1]))
-                rib_lower1=rib_y-2*sd(gg_inf[,1])
-                rib_upper1=rib_y+2*sd(gg_inf[,1])
-                rib_lower2=rib_y-sd(gg_inf[,1])
-                rib_upper2=rib_y+sd(gg_inf[,1])
-                rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
-                names(rib)=c("x_val","upper1","lower1","upper2","lower2")
-                
-                h=ggplot(gg_inf,aes(y=Residual,x=x))+
-                  geom_point()+
-                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
-                  geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
-                  xlab(names(X1)[p])+
-                  ggtitle(paste("Plot of Residuals for",names(X1)[p]),subtitle="Mean +/- SD")
-                print(h)
-              }else{
-                h=ggplot(gg_inf,aes(y=Residual,x=x))+
-                  geom_boxplot()+
-                  xlab(names(X1)[p])+
-                  ggtitle(paste("Plot of Residuals for",names(X1)[p]))
-                print(h)
-              }
-            }
-            if(p==ncol(X1)&m==num_mods){
-              
-            }else{
+          if(X_var==T){
+            for(p in 1:ncol(cox.zph(mod[[m]])$y)){
+              plot(cox.zph(mod[[m]])[p],
+                   main=paste("Plot of Schoenfeld Residuals for Cox Regression, Model ",m))
               readline("Press enter to proceed to the next plot")
             }
           }
+        }else{
+          if(Hist==T){
+            hist(res,main=paste("Histogram of Residuals for Model ", m,sep=""),xlab="Residual")
+            readline("Press enter to proceed to the next plot")
+          }
+          if(QQ==T){
+            qqnorm(res,main=paste("Normal Q-Q Plot for Model ", m,sep=""))
+            qqline(res)
+            readline("Press enter to proceed to the next plot")
+          }
+          if(X_var==T){
+            
+            X1=data.frame(X[[m]])
+            for(p in 1:ncol(X1)){
+              gg_inf=data.frame(res,X1[,p])
+              names(gg_inf)=c("Residual","x")
+              if(X_flag==1){
+                if(is.numeric(model.frame(mod[[m]])[,p+1])){
+                  gg_inf[,2]=as.numeric(gg_inf[,2])
+                  neg_min=ifelse(min(gg_inf[,2])<0,1,0)
+                  neg_max=ifelse(max(gg_inf[,2])<0,1,0)
+                  rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
+                  rib_y=rep(mean(gg_inf[,1]))
+                  rib_lower1=rib_y-2*sd(gg_inf[,1])
+                  rib_upper1=rib_y+2*sd(gg_inf[,1])
+                  rib_lower2=rib_y-sd(gg_inf[,1])
+                  rib_upper2=rib_y+sd(gg_inf[,1])
+                  rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
+                  names(rib)=c("x_val","upper1","lower1","upper2","lower2")
+                  
+                  h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                    geom_point()+
+                    geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
+                    geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
+                    xlab(names(X1)[p])+
+                    ggtitle(paste("Plot of Residuals for",names(X1)[p]),subtitle="Mean +/- SD")
+                  print(h)
+                }else{
+                  h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                    geom_boxplot()+
+                    xlab(names(X1)[p])+
+                    ggtitle(paste("Plot of Residuals for",names(X1)[p]))
+                  print(h)
+                }
+              }else{
+                if(is.numeric(gg_inf[,2])){
+                  neg_min=ifelse(min(gg_inf[,2])<0,1,0)
+                  neg_max=ifelse(max(gg_inf[,2])<0,1,0)
+                  rib_x=seq((min(gg_inf[,2])*(1.1*(neg_min)+0.9*(1-neg_min))),(max(gg_inf[,2])*(1.1*(1-neg_max)+0.9*(neg_max))),length=nrow(gg_inf))
+                  rib_y=rep(mean(gg_inf[,1]))
+                  rib_lower1=rib_y-2*sd(gg_inf[,1])
+                  rib_upper1=rib_y+2*sd(gg_inf[,1])
+                  rib_lower2=rib_y-sd(gg_inf[,1])
+                  rib_upper2=rib_y+sd(gg_inf[,1])
+                  rib=data.frame(rib_x,rib_upper1,rib_lower1,rib_upper2,rib_lower2)
+                  names(rib)=c("x_val","upper1","lower1","upper2","lower2")
+                  
+                  h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                    geom_point()+
+                    geom_ribbon(aes(x=rib$x_val,ymin=rib$lower1,ymax=rib$upper1),alpha=0.15)+
+                    geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
+                    xlab(names(X1)[p])+
+                    ggtitle(paste("Plot of Residuals for",names(X1)[p]),subtitle="Mean +/- SD")
+                  print(h)
+                }else{
+                  h=ggplot(gg_inf,aes(y=Residual,x=x))+
+                    geom_boxplot()+
+                    xlab(names(X1)[p])+
+                    ggtitle(paste("Plot of Residuals for",names(X1)[p]))
+                  print(h)
+                }
+              }
+              if(p==ncol(X1)&m==num_mods){
+                
+              }else{
+                readline("Press enter to proceed to the next plot")
+              }
+            }
+          }
         }
-      }
+      } 
     }
+    nline_blurb=data.frame("Number lines for interpretation of model fit metrics")
+    colnames(nline_blurb)=""
+    rownames(nline_blurb)=""
+    print(nline_blurb)
+    
+    nline=data.frame(
+      rbind("For the -2LL, AIC, and BIC:                  ",
+            "Better                                  Worse",
+            "<----------|----------|----------|---------->",
+            "(Negative             0             (Positive",
+            "numbers)                             numbers)")
+    )
+    colnames(nline)=""
+    rownames(nline)=c(""," ","  ","   ","    ")
+    print(nline)
+    
+    nline=data.frame(
+      rbind("For Marginal R2:                             ",
+            "Worse                                  Better",
+            "|----------|----------|----------|----------|",
+            "0.00                0.50                 1.00",
+            "                                             ")
+    )
+    colnames(nline)=""
+    rownames(nline)=c(""," ","  ","   ","    ")
+    print(nline)
+    
+    nline_blurb=data.frame("Model Results")
+    colnames(nline_blurb)=""
+    rownames(nline_blurb)=""
+    print(nline_blurb)
   }
   cox_note="Note: Marginal R2 not possible for Cox regression models"
   cox_note=data.frame(cox_note)
@@ -2096,6 +2230,8 @@ inspect_mods=function(mod=NA,
     print(cox_note)
   }
   invisible(table)
+  
+  
 }
 
 
@@ -2135,11 +2271,11 @@ L_assoc_design=function(inputs,
   }
   
   s=summary(mod)
-  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
-  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
-  cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
-  rma_mv=ifelse(is.null(mod$vi),0,1)
-  glm=ifelse(cox+lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+  glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+  cox=ifelse("coxph"%in%class(mod),1,0)
+  rma_mv=ifelse("rma"%in%class(mod),1,0)
+  glm=ifelse("lm"%in%class(mod),1,0)
   
   if(glmmTMB==1){
     coef_nam=c(rownames(summary(mod)$coefficients$cond))
@@ -2233,11 +2369,11 @@ L_assoc_fit=function(L_x,
                      Est_Names=NULL){
   
   s=summary(mod)
-  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
-  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
-  cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
-  rma_mv=ifelse(is.null(mod$vi),0,1)
-  glm=ifelse(cox+lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+  glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+  cox=ifelse("coxph"%in%class(mod),1,0)
+  rma_mv=ifelse("rma"%in%class(mod),1,0)
+  glm=ifelse("lm"%in%class(mod),1,0)
   
   L_x2=matrix(nrow=(length(design)),ncol=ncol(L_x))
   for(e in 1:ncol(L_x)){
@@ -2317,61 +2453,135 @@ L_assoc_fit=function(L_x,
 
 #mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
 
+#Three types are available:
+#1). Moderation
+
 #Provides an easy interface for designating variables as one of:
 #   Associations (main effect and interactions included)
 #   Moderators/effect modifiers (only includes interactions with association variable)
 #   Not included in the estimate (0 for all coefficients)
 
+#2). Powers
+
+#Variables that are in the model more than once as powers of itself
+#(e.g., X and X^2) can be designated as the same variable and what the power is
+
+#3). Splines
+
+#Varuables that are in the model more than once as splines
+#can be designated as the same variable and where knots are
+
 #Intended to be used with L_Specify and Est_Mod for writing L matrix
 
-L_Designer=function(mod){
-  ui <- fluidPage(
+L_Designer=function(mod,
+                    type="Any"){
+  
+  if(type=="any"|type=="Any"|type=="a"|type=="A"){
+    Design=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=3)
     
-    titlePanel("L Matrix Designer"),
-    mainPanel(
-      radioMatrixInput(inputId = "des",
-                       rowIDs = paste("X",1:nrow(L_inputs(mod)),sep=""),
-                       rowLLabels = c(L_inputs(mod))$Coefficient,
-                       choices = list("Primary Association","Moderator/Effect Modifier","Not Included")),
+    colnames(Design)=c("Variable Name","Power","Knot")
+    row.names(Design)=c(L_inputs(mod)$Coefficient)
+    Design[,1]=c(L_inputs(mod)$Coefficient)
+    Design[,2]=1
+    
+    
+    ui <- fluidPage(
       
-      actionButton(inputId = "go",label = "Display Backup Code"),
-    ),
-  )
-  server <- function(input, output, session) {  
-    
-    data <- observeEvent(input$go, {
-      all={input$des}
-      design=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=2)
-      for(p in 1:length(L_inputs(mod)$Coefficient)){
-        design[p,1]=L_inputs(mod)$Coefficient[p]
-        design[p,2]=all[[p]]
-      }
-      Design <<- design
+      titlePanel("Input information on variable relationships"),
+      mainPanel(
+        width=20,
+        tags$h4(strong("If two variables are the same (e.g., linear effect, quadratic effect; linear change, spline), edit their names to be the same and specify the power and what value the knot begins"
+        )),
+        tags$h5(strong("(So for powers, 1 for linear, 2 for quadratic, 3 for cubic, and so on... If  you have a splines from 3-4 and then again from 4 to the max; the first knot would be 3, and the second 4)")),
+        tags$h6(strong("(Leave blank if effect is not a spline)")),
+        matrixInput("sample",value = Design,
+                    rows = list(extend = FALSE),
+                    cols = list(names = TRUE)),
+        actionButton(inputId = "go",label = "Display Backup Code"),
+      ),
+    )
+    server <- function(input, output, session) {  
+      data <- observeEvent(input$go, {
+        all={input$sample}
+        Design <<-all
+      })
       
-    })
+      text <- observeEvent(input$go, {
+        Design2=rbind(c("Type:","'Any'","''"),Design)
+        Design2=ifelse(is.na(Design2)|Design2=="",as.character("NA"),Design2)
+        Design2=cbind(Design2,c(as.character(""),c(L_inputs(mod)$Coefficient)))
+        Design<<-Design2
+        for(p in 1:4){
+          if(p==1){
+            out=paste("Design=cbind(c(",noquote(paste(Design2[1:nrow(Design2),p],collapse="','")),"),",sep="'")
+          }else if(p==2|p==3){
+            col=paste("c(",noquote(toString(Design2[1:nrow(Design2),p])),"),",sep="")
+            out=paste(out,col,sep='\n')
+          }else{
+            col=paste("c(",noquote(paste(Design2[1:nrow(Design2),p],collapse="','")),"))",sep="'")
+            out=paste(out,col,sep='\n')
+          }
+        }    
+        
+        cat(paste("","","Copy and paste the following into R to backup your work!",
+                  "","",out,"","",sep='\n'))    
+      })
+      
+      session$onSessionEnded(function() { stopApp() })
+      
+    }
+    shinyApp(ui, server)
     
-    text <- observeEvent(input$go, {
-      out1=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=1)
-      out2=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=1)
-      for(p in 1:length(L_inputs(mod)$Coefficient)){
-        if(p==1){
-          out1=paste("Design=cbind(c('",Design[p,1],"',",sep="")
-          out2=paste("c('",Design[p,2],"',",sep="")
-        }else if(p<length(L_inputs(mod)$Coefficient)){
-          out1=c(out1,paste("'",Design[p,1],"',",sep=""))
-          out2=c(out2,paste("'",Design[p,2],"',",sep=""))
-        }else{
-          out1=c(out1,paste("'",Design[p,1],"'),",sep=""))
-          out2=c(out2,paste("'",Design[p,2],"'))",sep=""))
+  }else{
+    ui <- fluidPage(
+      
+      titlePanel("L Matrix Designer"),
+      mainPanel(
+        radioMatrixInput(inputId = "des",
+                         rowIDs = paste("X",1:nrow(L_inputs(mod)),sep=""),
+                         rowLLabels = c(L_inputs(mod))$Coefficient,
+                         choices = list("Primary Association","Moderator/Effect Modifier","Not Included")),
+        
+        actionButton(inputId = "go",label = "Display Backup Code"),
+      ),
+    )
+    server <- function(input, output, session) {  
+      
+      data <- observeEvent(input$go, {
+        all={input$des}
+        design=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=2)
+        for(p in 1:length(L_inputs(mod)$Coefficient)){
+          design[p,1]=L_inputs(mod)$Coefficient[p]
+          design[p,2]=all[[p]]
         }
-      }
-      cat(cat("","","Copy and paste the following into R to backup your work!",
-              "","",sep='\n'),cat(cat(out1,'\n'),cat(out2),sep='\n'),sep='\n')
-    })
-    session$onSessionEnded(function() { stopApp() })
+        Design <<- design
+        
+      })
+      
+      text <- observeEvent(input$go, {
+        out1=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=1)
+        out2=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=1)
+        for(p in 1:length(L_inputs(mod)$Coefficient)){
+          if(p==1){
+            out1=paste("Design=cbind(c('",Design[p,1],"',",sep="")
+            out2=paste("c('",Design[p,2],"',",sep="")
+          }else if(p<length(L_inputs(mod)$Coefficient)){
+            out1=c(out1,paste("'",Design[p,1],"',",sep=""))
+            out2=c(out2,paste("'",Design[p,2],"',",sep=""))
+          }else{
+            out1=c(out1,paste("'",Design[p,1],"'),",sep=""))
+            out2=c(out2,paste("'",Design[p,2],"'))",sep=""))
+          }
+        }
+        cat(cat("","","Copy and paste the following into R to backup your work!",
+                "","",sep='\n'),cat(cat(out1,'\n'),cat(out2),sep='\n'),sep='\n')
+      })
+      session$onSessionEnded(function() { stopApp() })
+      
+    }
+    shinyApp(ui, server)
     
   }
-  shinyApp(ui, server)
   
 }
 
@@ -2387,11 +2597,11 @@ L_Designer=function(mod){
 L_inputs=function(mod){
   
   s=summary(mod)
-  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
-  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
-  cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
-  rma_mv=ifelse(is.null(mod$vi),0,1)
-  glm=ifelse(cox+lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+  glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+  cox=ifelse("coxph"%in%class(mod),1,0)
+  rma_mv=ifelse("rma"%in%class(mod),1,0)
+  glm=ifelse("lm"%in%class(mod),1,0)
   
   if(glmmTMB==1){
     coef_nam=c(rownames(summary(mod)$coefficients$cond))
@@ -2421,10 +2631,11 @@ L_inputs=function(mod){
 L_inputs_gen=function(mod){
   
   s=summary(mod)
-  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
-  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
-  rma_mv=ifelse(is.null(mod$vi),0,1)
-  glm=ifelse(lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+  glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+  cox=ifelse("coxph"%in%class(mod),1,0)
+  rma_mv=ifelse("rma"%in%class(mod),1,0)
+  glm=ifelse("lm"%in%class(mod),1,0)
   
   if(glmmTMB==1){
     coef_nam=c(rownames(summary(mod)$coefficients$cond))
@@ -2464,11 +2675,11 @@ L_pred_fit=function(L_x,
   }
   
   s=summary(mod)
-  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
-  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
-  cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
-  rma_mv=ifelse(is.null(mod$vi),0,1)
-  glm=ifelse(cox+lme4+glmmTMB+rma_mv==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+  glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+  cox=ifelse("coxph"%in%class(mod),1,0)
+  rma_mv=ifelse("rma"%in%class(mod),1,0)
+  glm=ifelse("lm"%in%class(mod),1,0)
   
   if(glmmTMB==1){
     coef_nam=c(rownames(summary(mod)$coefficients$cond))
@@ -2515,6 +2726,8 @@ L_pred_fit=function(L_x,
 
 #Est_Num is the number of linear combination estiamtes that are of interest
 
+#x_range is a name to be plotted across a range of values
+
 #type is a character from the following:
 
 #   Mean (estimating the average for given X levels)
@@ -2538,13 +2751,15 @@ L_pred_fit=function(L_x,
 L_Specify=function(mod,
                    Est_Num,
                    type="Mean",
-                   Design=NULL){
+                   Design=NULL,
+                   x_range=F){
   
   s=summary(mod)
-  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
-  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
-  cox=ifelse("fail"%in%c(names(summary(mod))),1,0)
-  glm=ifelse(cox+lme4+glmmTMB==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
+  lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+  glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+  cox=ifelse("coxph"%in%class(mod),1,0)
+  rma_mv=ifelse("rma"%in%class(mod),1,0)
+  glm=ifelse("lm"%in%class(mod),1,0)
   
   
   if(type=="General"|type=="general"|type=="G"|type=="g"|type=="Gen"|type=="gen"){
@@ -2680,67 +2895,327 @@ L_Specify=function(mod,
     shinyApp(ui, server)
     
   }else{
-    m=data.frame(matrix(nrow=(length(L_inputs(mod)$Coefficient)+1),
-                        ncol=Est_Num))
-    colnames(m)=c(paste("Estimate ",1:Est_Num,sep=""))
-    row.names(m)=c("Estimate Name",c(L_inputs(mod)$Coefficient))
-    m=as.matrix(m)
-    
-    ui <- fluidPage(
+    if(is.null(Design)){
+      m=data.frame(matrix(nrow=(length(L_inputs(mod)$Coefficient)+1),
+                          ncol=Est_Num))
+      colnames(m)=c(paste("Estimate ",1:Est_Num,sep=""))
+      row.names(m)=c("Estimate Name",c(L_inputs(mod)$Coefficient))
+      m=as.matrix(m)
       
-      titlePanel("L Matrix Inputs"),
-      mainPanel(
-        width=20,
-        tags$h5(strong("Input a name and the corresponding X values for each coefficient you would like to estimate the average for")),
-        matrixInput("sample",value = m,
-                    rows = list(extend = FALSE),
-                    cols = list(names = TRUE)),
-        actionButton(inputId = "go",label = "Display Backup Code"),
-      ),
-    )
-    server <- function(input, output, session) {  
-      data <- observeEvent(input$go, {
-        all={input$sample}
-        L <<-L_pred_fit(all[2:nrow(all),1:ncol(all)],
-                        mod)
-        Est_Names <<- c(as.matrix(all[1,1:ncol(all)]))
-      })
-      
-      text <- observeEvent(input$go, {
-        for(p in 1:ncol(L)){
-          if(p==1){
-            out=paste("L=cbind(c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
-          }else if(p<ncol(L)){
-            col=paste("c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
-            out=paste(out,col,sep='\n')
-          }else{
-            col=paste("c(",noquote(toString(L[1:nrow(L),p])),"))",sep="")
-            out=paste(out,col,sep='\n')
+      ui <- fluidPage(
+        
+        titlePanel("L Matrix Inputs"),
+        mainPanel(
+          width=20,
+          tags$h5(strong("Input a name and the corresponding X values for each coefficient you would like to estimate the average for")),
+          matrixInput("sample",value = m,
+                      rows = list(extend = FALSE),
+                      cols = list(names = TRUE)),
+          actionButton(inputId = "go",label = "Display Backup Code"),
+        ),
+      )
+      server <- function(input, output, session) {  
+        data <- observeEvent(input$go, {
+          all={input$sample}
+          outmat=all[2:nrow(all),1:ncol(all)]
+          if(is.matrix(outmat)==F){
+            outmat=t(as.matrix(outmat))
           }
+          
+          
+          L <<-L_pred_fit(outmat,
+                          mod)
+          
+          if(is.matrix(L)==F){
+            L<<-t(as.matrix(L))
+          }
+          
+          Est_Names <<- c(as.matrix(all[1,1:ncol(all)]))
+        })
+        
+        text <- observeEvent(input$go, {
+          for(p in 1:ncol(L)){
+            if(p==1){
+              out=paste("L=cbind(c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+            }else if(p<ncol(L)){
+              col=paste("c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+              out=paste(out,col,sep='\n')
+            }else{
+              col=paste("c(",noquote(toString(L[1:nrow(L),p])),"))",sep="")
+              out=paste(out,col,sep='\n')
+            }
+          }
+          
+          for(p in 1:ncol(input$sample)){
+            if(p==1){
+              nam=noquote(paste("Est_Names=c('",input$sample[1,p],"',",sep=""))
+            }else if(p<ncol(input$sample)){
+              nam=c(nam,noquote(paste("'",input$sample[1,p],"',",sep="")))
+            }else{
+              nam=c(nam,noquote(paste("'",input$sample[1,p],"')",sep="")))
+            }
+          }
+          
+          cat(cat(paste("","","Copy and paste the following into R to backup your work!",
+                        "","",out,"","",sep='\n')),
+              cat(nam),sep='\n')
+        })
+        
+        session$onSessionEnded(function() { stopApp() })
+        
+      }
+      shinyApp(ui, server)
+    }else{
+      if(x_range==F){
+        if(Design[1,2]=="Splines"|Design[1,2]=="Powers"|Design[1,2]=="'Splines'"|Design[1,2]=="'Powers'"|
+           Design[1,2]=="Any"|Design[1,2]=="'Any'"){
+          m=data.frame(matrix(nrow=(length(unique(Design[,1]))),
+                              ncol=Est_Num))
+          colnames(m)=c(paste("Estimate ",1:Est_Num,sep=""))
+          row.names(m)=c("Estimate Name",c(unique(Design[2:nrow(Design),1])))
+          m=as.matrix(m)
+          
+          ui <- fluidPage(
+            
+            titlePanel("L Matrix Inputs"),
+            mainPanel(
+              width=20,
+              tags$h5(strong("Input a name and the corresponding X values for each coefficient you would like to estimate the average for")),
+              matrixInput("sample",value = m,
+                          rows = list(extend = FALSE),
+                          cols = list(names = TRUE)),
+              actionButton(inputId = "go",label = "Display Backup Code"),
+            ),
+          )
+          server <- function(input, output, session) {  
+            data <- observeEvent(input$go, {
+              all={input$sample}
+              outmat=all[2:nrow(all),1:ncol(all)]
+              if(is.matrix(outmat)==F){
+                outmat=t(as.matrix(outmat))
+              }
+              outmat=data.frame(outmat)
+              for(p in 1:ncol(outmat)){
+                outmat[,p]=as.numeric(outmat[,p])
+              }
+              outmat=as.matrix(outmat)
+              input_names=row.names(m)
+              input_names[1]="(Intercept)"
+              
+              L <<-L_pred_any(outmat,
+                              mod,
+                              Design,
+                              input_names)
+              
+              if(is.matrix(L)==F){
+                L<<-t(as.matrix(L))
+              }
+              Est_Names <<- c(as.matrix(all[1,1:ncol(all)]))
+            })
+            
+            text <- observeEvent(input$go, {
+              for(p in 1:ncol(L)){
+                if(p==1){
+                  out=paste("L=cbind(c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+                }else if(p<ncol(L)){
+                  col=paste("c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+                  out=paste(out,col,sep='\n')
+                }else{
+                  col=paste("c(",noquote(toString(L[1:nrow(L),p])),"))",sep="")
+                  out=paste(out,col,sep='\n')
+                }
+              }
+              
+              for(p in 1:ncol(input$sample)){
+                if(p==1){
+                  nam=noquote(paste("Est_Names=c('",input$sample[1,p],"',",sep=""))
+                }else if(p<ncol(input$sample)){
+                  nam=c(nam,noquote(paste("'",input$sample[1,p],"',",sep="")))
+                }else{
+                  nam=c(nam,noquote(paste("'",input$sample[1,p],"')",sep="")))
+                }
+              }
+              
+              cat(cat(paste("","","Copy and paste the following into R to backup your work!",
+                            "","",out,"","",sep='\n')),
+                  cat(nam),sep='\n')
+            })
+            
+            session$onSessionEnded(function() { stopApp() })
+            
+          }
+          shinyApp(ui, server)
+          
+          
+        }else{
+          warning("Moderation design type not meaningful for mean estimate type, change to type='association'!")
+        }
+      }else{
+        if(Design[1,2]=="Splines"|Design[1,2]=="Powers"|Design[1,2]=="'Splines'"|Design[1,2]=="'Powers'"|
+           Design[1,2]=="Any"|Design[1,2]=="'Any'"){
+          
+          m=data.frame(matrix(nrow=(length(L_inputs(mod)$Coefficient)+1),
+                              ncol=Est_Num))
+          colnames(m)=c(paste("Estimate ",1:Est_Num,sep=""))
+          row.names(m)=c("Estimate Name",c(L_inputs(mod)$Coefficient))
+          m=as.matrix(m)
+          
+          drop2=unique(Design[2:nrow(Design),1])[unique(Design[2:nrow(Design),1])!=x_range]
+          
+          checker=rep(0,length(drop2))
+          drop_row=rep(0,nrow(m))
+          
+          for(p in 2:nrow(m)){
+            var_nam=Design[which(row.names(m)[p]==Design[,4]),1]
+            if(var_nam==x_range){
+              drop_row[p]=0
+            }else if(var_nam%in%drop2){
+              if(checker[which(drop2==var_nam)]==1){
+                drop_row[p]=1
+              }else{
+                drop_row[p]=0
+                checker[which(drop2==var_nam)]=1
+              }
+            }else{
+              drop_row[p]=0
+            }
+          }
+          m=m[drop_row==0,]
+          
+          m1=m
+          
+          drop_rows=NULL
+          for(p in 2:nrow(m)){
+            if(Design[p,1]==x_range){
+              drop_rows=c(drop_rows,p-1)
+            }
+          }
+          
+          dropper=NULL
+          keeper=NULL
+          for(p in 2:length(row.names(m))){
+            if((p-1)%in%drop_rows){
+              dropper=c(dropper,row.names(m)[p])
+            }else{
+              keeper=c(keeper,row.names(m)[p])
+            }
+          }          
+          m=m[c(1,which(row.names(m)%in%keeper)),]
+          
+          
+          add_rows=matrix(nrow=length(drop_rows),
+                          ncol=Est_Num)
+          
+          
+          out1="x_effects=list()"
+          
+          for(i in 1:length(drop_rows)){
+            add_rows[i,]=rep(1,Est_Num)
+            out1=c(out1,paste("x_effects[[",i,"]]=c('",Design[drop_rows[i]+1,4],"',",1,",",Design[drop_rows[i]+1,2],",",Design[drop_rows[i]+1,3],")",sep=""))
+          }
+          
+          ui <- fluidPage(
+            
+            titlePanel("L Matrix Inputs"),
+            mainPanel(
+              width=20,
+              tags$h5(strong("Input a name and the corresponding X values for each coefficient you would like to estimate the average for")),
+              matrixInput("sample",value = m,
+                          rows = list(extend = FALSE),
+                          cols = list(names = TRUE)),
+              actionButton(inputId = "go",label = "Display Backup Code"),
+            ),
+          )
+          server <- function(input, output, session) {  
+            data <- observeEvent(input$go, {
+              all={input$sample}
+              outmat=all[2:nrow(all),1:ncol(all)]
+              if(is.matrix(outmat)==F){
+                outmat=t(as.matrix(outmat))
+              }
+              outmat=data.frame(outmat)
+              for(p in 1:ncol(outmat)){
+                outmat[,p]=as.numeric(outmat[,p])
+              }
+              outmat=as.matrix(outmat)
+              
+              outmat2=m1[2:nrow(m1),]
+              
+              q=1
+              for(p in 1:nrow(outmat2)){
+                if(row.names(outmat2)[p]%in%dropper){
+                  outmat2[p,]=add_rows[which(row.names(outmat2)[p]==dropper),]
+                }else{
+                  outmat2[p,]=outmat[q,]
+                  q=q+1
+                }
+              }
+              
+              input_names=c(row.names(m1))
+              input_names[1]="(Intercept)"
+              
+              
+              Design2=Design
+              for(p in 1:nrow(Design2)){
+                Design2[p,3]=ifelse(Design2[p,1]==x_range,NA,Design2[p,3])
+                Design2[p,1]=ifelse(Design2[p,1]==x_range,Design2[p,4],Design2[p,1])
+              }
+              
+              L <<-L_pred_any(outmat2,
+                              mod,
+                              Design2,
+                              input_names)
+              
+              
+              if(is.matrix(L)==F){
+                L<<-t(as.matrix(L))
+              }
+              Est_Names <<- c(as.matrix(all[1,1:ncol(all)]))
+            })
+            
+            text <- observeEvent(input$go, {
+              for(p in 1:ncol(L)){
+                if(p==1){
+                  out=paste("L=cbind(c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+                }else if(p<ncol(L)){
+                  col=paste("c(",noquote(toString(L[1:nrow(L),p])),"),",sep="")
+                  out=paste(out,col,sep='\n')
+                }else{
+                  col=paste("c(",noquote(toString(L[1:nrow(L),p])),"))",sep="")
+                  out=paste(out,col,sep='\n')
+                }
+              }
+              
+              for(p in 1:ncol(input$sample)){
+                if(p==1){
+                  nam=noquote(paste("Est_Names=c('",input$sample[1,p],"',",sep=""))
+                }else if(p<ncol(input$sample)){
+                  nam=c(nam,noquote(paste("'",input$sample[1,p],"',",sep="")))
+                }else{
+                  nam=c(nam,noquote(paste("'",input$sample[1,p],"')",sep="")))
+                }
+              }
+              
+              cat(cat(paste("","","Copy and paste the following into R to backup your work!",
+                            "","",out,"","",sep='\n')),
+                  cat(c(out1),"",sep='\n'),
+                  cat(nam),sep='\n')
+            })
+            
+            session$onSessionEnded(function() { stopApp() })
+            
+          }
+          shinyApp(ui, server)
+          
+          
+        }else{
+          warning("Moderation design type not meaningful for mean estimate type, change to type='association'!")
         }
         
-        for(p in 1:ncol(input$sample)){
-          if(p==1){
-            nam=noquote(paste("Est_Names=c('",input$sample[1,p],"',",sep=""))
-          }else if(p<ncol(input$sample)){
-            nam=c(nam,noquote(paste("'",input$sample[1,p],"',",sep="")))
-          }else{
-            nam=c(nam,noquote(paste("'",input$sample[1,p],"')",sep="")))
-          }
-        }
-        
-        cat(cat(paste("","","Copy and paste the following into R to backup your work!",
-                      "","",out,"","",sep='\n')),
-            cat(nam),sep='\n')
-      })
-      
-      session$onSessionEnded(function() { stopApp() })
-      
+      }
     }
-    shinyApp(ui, server)
   }
 }
-
 
 #Depends on ggplot2, psych, and shiny
 
@@ -3376,7 +3851,7 @@ desc_clust_emp=function(data,
           tab[p,q]=ifelse(tab[p,q]=="","",
                           ifelse(fact_ID2[p]==1,paste(round(as.numeric(tab_M[p,q]),as.numeric(key[r,3]))," [",round(as.numeric(tab_LL[p,q]),as.numeric(key[r,3])),", ",round(as.numeric(tab_UL[p,q]),as.numeric(key[r,3])),"]",sep=""),
                                  paste(round(as.numeric(tab_M[p,q]),as.numeric(key[r,3]))," [",round(as.numeric(tab_LL[p,q]),as.numeric(key[r,3])),", ",round(as.numeric(tab_UL[p,q]),as.numeric(key[r,3])),"]",sep="")))
-
+          
         }
       }
       if(is.na(tab[p,1])){
@@ -3500,7 +3975,7 @@ desc_clust_emp=function(data,
 
 
 
-#Relies on GGplot, msir
+#Relies on GGplot
 
 #mod is a fitted model object from lm, glm, lmer, glmer, or glmmTMB
 
@@ -3517,7 +3992,8 @@ df_L=function(mod,
               Est_Names=NULL,
               L=NULL,
               L_zi=NULL,
-              plots=T){
+              plots=T,
+              fixed_y_axis=T){
   
   
   if("EnvStats" %in% (.packages())){
@@ -3526,14 +4002,16 @@ df_L=function(mod,
   }else{
     env_flag=0
   }
-
-
+  
+  
   s=summary(mod)
-  lme4=sum(ifelse(s$objClass[1]=="lmerMod",1,ifelse(s$objClass[1]=="glmerMod",1,0)))
-  glme4=ifelse(lme4==1,ifelse(s$objClass[1]=="glmerMod",1,0),0)
-  glmmTMB=ifelse(lme4==1,0,ifelse(length(s$coefficients)==3,1,0))
-  glm=ifelse(lme4+glmmTMB==0,1-sum(ifelse(tryCatch(s$coefficients, error=function(err) 1)==1,1,0),na.rm=T),0)
-  lm=ifelse(glm==1,ifelse(is.null(summary(mod)$family[[1]]),1,0),0)
+  lme4=ifelse("lmerMod"%in%c(class(mod)),1,0)
+  glme4=ifelse("glmerMod"%in%c(class(mod)),1,0)
+  glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+  cox=ifelse("coxph"%in%class(mod),1,0)
+  rma_mv=ifelse("rma"%in%class(mod),1,0)
+  lm=ifelse("lm"%in%class(mod),1,0)
+  glm=ifelse("glm"%in%class(mod),1,0)
   
   
   
@@ -3542,7 +4020,7 @@ df_L=function(mod,
   if(glmmTMB==1){
     family=summary(mod)$family
     link=summary(mod)$link
-  }else if(lm==1){
+  }else if(lm==1&glm==0){
     family="gaussian"
     link="identity"
   }else if(glm==1){
@@ -3559,7 +4037,135 @@ df_L=function(mod,
   
   breaks=round(seq(0,nrow(x),length=11),0)
   print(noquote("Beginning influence analysis (this may take some time)"))
-  if(glm==1){
+  
+  if(cox==1){
+    
+    X=model.frame(mod)[,2:ncol(model.frame(mod))]
+    if("(cluster)"%in%names(X)){
+      clust=X$`(cluster)`
+      clust_present=1
+    }else{
+      clust_present=0
+    }
+    X=X[,names(X)!=("(cluster)")]
+    
+    coef_nam=c(rownames(summary(mod)$coefficients))
+    split_text=str_split(coef_nam, ":", simplify = TRUE)
+    split_bin=ifelse(split_text=="",0,1)
+    
+    var_nam=c(names(model.frame(mod)[2:ncol(model.frame(mod))]))
+    
+    split_2=split_text
+    for(i in 1:nrow(split_text)){
+      for(j in 1:ncol(split_text)){
+        for(k in 1:length(var_nam)){
+          if(split_2[i,j]==""){
+            split_2[i,j]=""
+          }else{
+            split_2[i,j]=ifelse(grepl(var_nam[k],split_2[i,j])==T,
+                                ifelse(var_nam[k]==split_2[i,j],split_2[i,j],
+                                       gsub(var_nam[k],'',split_2[i,j])),split_2[i,j])
+          }
+        }
+      }
+    }
+    
+    reg2=matrix(nrow=nrow(split_2),ncol=1)
+    X2=matrix(nrow=nrow(X),ncol=nrow(split_2))
+    X3=matrix(1,nrow=nrow(X),ncol=nrow(split_2))
+    for(q in 1:nrow(split_2)){
+      hold=c(split_2[q,])
+      hold2=ifelse(hold=="",NA,hold)
+      hold3=hold2[complete.cases(hold2)]
+      hold4=NULL
+      if(length(hold3)==1){
+        reg2[q,]=hold3
+        if(hold3%in%var_nam){
+          X2[,q]=X[,names(X)==hold3]
+        }else{
+          flag=0
+          for(i in 1:length(var_nam)){
+            flag=ifelse(grepl(var_nam[i],split_text[q,1]),i,flag)
+          }
+          X2[,q]=ifelse(X[,names(X)==var_nam[flag]]==hold3,1,0)
+        }
+      }else{
+        for(i in 1:length(hold3)){
+          if(i==length(hold3)){
+            hold4=c(hold4,paste(hold4[i-1],hold3[i],sep=""))
+          }else{
+            hold4=c(hold4,paste(hold3[i],"_",sep=""))
+          }
+        }
+        reg2[q,]=hold4[i]
+      }
+    }
+    
+    count=ifelse(clust_present==1,length(var_nam)-1,length(var_nam))
+    
+    for(q in 1:ncol(X2)){
+      if(rowSums(split_bin)[q]==1){
+        X2[,q]=X2[,q]
+      }else{
+        X2[,q]=1
+        for(i in 1:count){
+          if(grepl(reg2[i,],reg2[q,])==T){
+            X2[,q]=X2[,q]*X2[,i]
+          }
+        }
+      }
+    }
+    
+    time=model.frame(mod)[,1][,1]
+    event=model.frame(mod)[,1][,2]
+    
+    X2=cbind(X2,time,event)
+    
+    if(clust_present==1){
+      X2=cbind(X2,clust)
+      namer=c(reg2,"time","event","Clust")
+    }else{
+      namer=c(reg2,"time","event")
+    }
+    X2=data.frame(X2)
+    colnames(X2)=c(namer)
+    
+    
+    for(q in 1:nrow(reg2)){
+      if(q==1){
+        line=paste("Surv(time,event)~",reg2[q,],sep="")
+      }else if(q==nrow(reg2)){
+        if(clust_present==1){
+          line=paste(line,"+",reg2[q,],"+cluster(Clust)",sep="")
+        }else{
+          line=paste(line,"+",reg2[q,],sep="")
+        }
+      }else{
+        line=paste(line,"+",reg2[q,],sep="")
+      }
+    }
+    
+    
+    
+    
+    if(is.null(L)){
+      L=matrix(0,ncol=length(mod$coefficients),nrow=length(mod$coefficients))
+      diag(L)=1
+      Est_Names=c(names(mod$coefficients))
+    }
+    
+    dfl=matrix(ncol=ncol(L)+1,nrow=nrow(x))
+    
+    
+    for(i in 1:nrow(x)){
+      x_i=X2[-i,]
+      m2=coxph(formula(line),data=x_i)
+      dfl[i,]=c(NA,(t(L)%*%mod$coefficients-t(L)%*%m2$coefficients)/t(L)%*%mod$coefficients)
+      if(i%in%breaks){
+        print(noquote(paste(round(i/nrow(x)*100,0),"%")))
+      }
+    }
+  }else if(glm==1|lm==1){
     if(is.null(L)){
       L=matrix(0,ncol=length(mod$coefficients),nrow=length(mod$coefficients))
       diag(L)=1
@@ -4090,35 +4696,64 @@ df_L=function(mod,
     print(noquote(outtab))
     
     for(p in 1:ncol(dfl2)){
-      h=ggplot(data.frame(dfl2[,p]*100))+
-        geom_point(aes(x=1:nrow(dfl2),y=dfl2[,p]*100))+
-        geom_segment(aes(x=1:nrow(dfl2),xend=1:nrow(dfl2),y=0,yend=dfl2[,p]*100),color="cornflowerblue")+
-        xlab("Row ID")+
-        ylab("Increase or Decrease in Estimate (%)")+
-        ggtitle(paste("Influence of Individual Datapoints on",ggnam[p]))+
-        ylim(min(dfl2)*110,max(dfl2)*110)
+      if(fixed_y_axis==T){
+        h=ggplot(data.frame(dfl2[,p]*100))+
+          geom_point(aes(x=1:nrow(dfl2),y=dfl2[,p]*100))+
+          geom_segment(aes(x=1:nrow(dfl2),xend=1:nrow(dfl2),y=0,yend=dfl2[,p]*100),color="cornflowerblue")+
+          xlab("Row ID")+
+          ylab("Increase or Decrease in Estimate (%)")+
+          ggtitle(paste("Influence of Individual Datapoints on",ggnam[p]))+
+          ylim(min(dfl2)*110,max(dfl2)*110)
+      }else{
+        h=ggplot(data.frame(dfl2[,p]*100))+
+          geom_point(aes(x=1:nrow(dfl2),y=dfl2[,p]*100))+
+          geom_segment(aes(x=1:nrow(dfl2),xend=1:nrow(dfl2),y=0,yend=dfl2[,p]*100),color="cornflowerblue")+
+          xlab("Row ID")+
+          ylab("Increase or Decrease in Estimate (%)")+
+          ggtitle(paste("Influence of Individual Datapoints on",ggnam[p]))
+      }
       print(h)
       readline("Press enter to proceed to the next plot")
     }
     
   }
-  
-  dfl=cbind(c(model.frame(mod)[,1]),dfl)
+  if(cox==1){
+    dfl=cbind(c(model.frame(mod)[,1]),dfl[,2:ncol(dfl)])
+  }
+  else{
+    dfl=cbind(c(model.frame(mod)[,1]),dfl)
+  }
   dfl=data.frame(dfl)
   if(is.null(Est_Names)){
-    colnames(dfl)=c(names(model.frame(mod))[1],paste(names(model.frame(mod))[1],"_LOO",sep=""),1:ncol(dfl2))
+    if(cox==1){
+      colnames(dfl)=c(paste(names(model.frame(mod))[1],"_time",sep=""),paste(names(model.frame(mod))[1],"_event",sep=""),1:ncol(dfl2))
+    }else{
+      colnames(dfl)=c(names(model.frame(mod))[1],paste(names(model.frame(mod))[1],"_LOO",sep=""),1:ncol(dfl2))
+    }
   }else if(length(Est_Names)!=ncol(outtab)){
-    colnames(dfl)=c(names(model.frame(mod))[1],paste(names(model.frame(mod))[1],"_LOO",sep=""),1:ncol(dfl2))
+    if(cox==1){
+      colnames(dfl)=c(paste(names(model.frame(mod))[1],"_time",sep=""),paste(names(model.frame(mod))[1],"_event",sep=""),1:ncol(dfl2))
+    }else{
+      colnames(dfl)=c(names(model.frame(mod))[1],paste(names(model.frame(mod))[1],"_LOO",sep=""),1:ncol(dfl2))
+    }
   }else{
-    colnames(dfl)=c(names(model.frame(mod))[1],paste(names(model.frame(mod))[1],"_LOO",sep=""),Est_Names)
+    if(cox==1){
+      colnames(dfl)=c(paste(names(model.frame(mod))[1],"_time",sep=""),paste(names(model.frame(mod))[1],"_event",sep=""),Est_Names)
+    }else{
+      colnames(dfl)=c(names(model.frame(mod))[1],paste(names(model.frame(mod))[1],"_LOO",sep=""),Est_Names)
+    }
   }
-  blurb=paste("Leave One Out R2 = ",round(cor(dfl[,1],dfl[,2],use="pairwise.complete.obs")^2,3),sep="")
+  if(cox==1){
+    blurb="Leave One Out R2 not able to be calculated for cox proportional hazard regression because there is no predicted hazard"
+  }else{
+    blurb=paste("Leave One Out R2 = ",round(cor(dfl[,1],dfl[,2],use="pairwise.complete.obs")^2,3),sep="")
+  }
   blurb=data.frame(rbind(blurb,""))
   colnames(blurb)=c("")
   rownames(blurb)=c(""," ")
   
   print(noquote(blurb))
-
+  
   out=list(df_L=dfl)
   
   if(env_flag==1){
@@ -4127,8 +4762,368 @@ df_L=function(mod,
     suppressMessages(library(EnvStats))
     options(warn=warn)
   }
-
+  
   return(dfl)
+}
+
+#Works in base R
+
+#data is the name of a data object
+
+#x_name is the x variable to be processed into splines
+
+#knots is a vector of cut points between spline segments
+
+
+X_Spline=function(data,
+                  x_name,
+                  knots){
+  dat_nam=deparse(substitute(data))
+  var_nam=deparse(substitute(x_name))
+  if(length(knots)==1){
+    printer=paste(dat_nam,"$",var_nam,"_spline=ifelse(",
+                  dat_nam,"$",var_nam,"<",ifelse(knots<0,paste("(",knots,")",sep=""),knots),",0,",
+                  dat_nam,"$",var_nam,"-",ifelse(knots<0,paste("(",knots,")",sep=""),knots),")",sep="")
+  }else{
+    print_mat=matrix(nrow=length(knots),ncol=1)
+    for(k in 1:length(knots)){
+      print_mat[k,]=paste(dat_nam,"$",var_nam,"_spline_",ifelse(knots[k]<0,paste("neg",abs(knots[k]),sep=""),knots[k]),"=ifelse(",
+                          dat_nam,"$",var_nam,"<",ifelse(knots[k]<0,paste("(",knots[k],")",sep=""),knots[k]),",0,",
+                          dat_nam,"$",var_nam,"-",ifelse(knots[k]<0,paste("(",knots[k],")",sep=""),knots[k]),")",sep="")
+    }
+    printer=NULL
+    for(k in 1:length(knots)){
+      printer=paste(printer,print_mat[k,],sep='\n')
+    }
+  }
+  if(length(knots)==1){
+    cat(cat("","","Copy and paste the following into R to backup your work!",
+            "","",sep='\n'),cat(printer))
+    
+  }else{
+    cat(cat("","","Copy and paste the following into R to backup your work!",
+            "",sep='\n'),cat(printer))
+  }
+}
+
+#Depends on tidyverse
+
+#L_x is a P x E matrix of P regressor levels across E estimates 
+#intended to be used in conjunction with L_inputs to produce a model forecast
+
+#mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
+
+#Est_Names is E length vector of estimate names
+
+#Design is a matrix from L_designer with type="Splines"
+
+#Intended to be used with L_Specify and Est_Mod for writing L matrix
+
+L_pred_spline=function(L_x,
+                       mod,
+                       design,
+                       Est_Names=NULL){
+  
+  L_spl=matrix(nrow=(nrow(design)-1),
+               ncol=length(unique(design[2:nrow(design),1])))
+  rownames(L_spl)=c(unique(design[2:nrow(design),3]))
+  colnames(L_spl)=c(unique(design[2:nrow(design),1]))
+  for(q in 1:ncol(L_spl)){
+    count=1
+    for(p in 1:nrow(L_spl)){
+      if(design[(p+1),1]==colnames(L_spl)[q]){
+        L_spl[p,q]=count
+        count=count+1
+      }else{
+        L_spl[p,q]=0
+      }
+    }
+  }
+  
+  L_x1=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=ncol(L_x))
+  for(e in 1:ncol(L_x1)){
+    count=1
+    for(p in 1:nrow(L_spl)){
+      for(q in 1:ncol(L_spl)){
+        if(L_spl[p,q]>0){
+          if(L_spl[p,q]==1){
+            L_x1[p,e]=L_x[p,e]
+          }else if(L_spl[p,q]==max(L_spl[,q])){
+            crit=as.numeric(design[(1+p),2])
+            L_x1[p,e]=ifelse(L_x[count,e]<crit,0,L_x[count,e]-crit)
+          }else{
+            crit=as.numeric(design[(1+p),2])
+            row_id=which(L_spl[,q]==L_spl[p,q]+1)
+            crit2=as.numeric(design[(1+row_id),2])
+            L_x1[p,e]=ifelse(L_x[count,e]<crit,0,
+                             ifelse(L_x[count,e]<crit2,L_x[count,e]-crit,0))
+          }
+          if(max(L_spl[,q])==p){
+            count=count+1
+          }
+        }
+      }
+    }
+  }
+  
+  
+  L1=rbind(1,L_x1)
+  
+  if(is.null(Est_Names)){
+    Est_Names=c(paste("Estimate",1:ncol(L_x)))
+  }
+  
+  
+  
+  s=summary(mod)
+  lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+  glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+  cox=ifelse("coxph"%in%class(mod),1,0)
+  rma_mv=ifelse("rma"%in%class(mod),1,0)
+  glm=ifelse("lm"%in%class(mod),1,0)
+  
+  if(glmmTMB==1){
+    coef_nam=c(rownames(summary(mod)$coefficients$cond))
+  }else if(cox==1){
+    coef_nam=c("(Intercept)",rownames(summary(mod)$coefficients))
+  }else if(rma_mv==1){
+    coef_nam=c(rownames(mod$beta))
+  }else{
+    coef_nam=c(rownames(summary(mod)$coefficients))
+  }
+  split_text=str_split(coef_nam, ":", simplify = TRUE)
+  split_bin=ifelse(split_text=="",0,1)
+  split_num=matrix(ncol=1,nrow=sum(rowSums(split_bin)==1))
+  
+  L=matrix(nrow=nrow(split_text),ncol=length(c(Est_Names)))
+  
+  for(e in 1:length(c(Est_Names))){
+    split_num=matrix(L1[,e])
+    for(p in 1:nrow(L)){
+      coef=split_text[p,]
+      mult=1
+      for(q in 1:nrow(split_num)){
+        for(r in 1:ncol(split_num)){
+          mult=mult*ifelse(split_text[q,r]%in%coef,as.numeric(split_num[q,1]),1)
+        }
+      }
+      L[p,e]=mult
+    }
+  }
+  row.names(L)=c(coef_nam)
+  
+  if(cox==1){
+    L=L[2:nrow(L),]
+  }
+  
+  return(L)
+  
+}
+
+
+
+
+
+
+#L_x is a P x E matrix of P regressor levels across E estimates 
+#intended to be used in conjunction with L_inputs to produce a model forecast
+
+#mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
+
+#Est_Names is E length vector of estimate names
+
+#Design is a matrix from L_designer with type="Powers"
+
+#Intended to be used with L_Specify and Est_Mod for writing L matrix
+
+L_pred_curve=function(L_x,
+                      mod,
+                      design,
+                      Est_Names=NULL){
+  
+  L_spl=matrix(nrow=(nrow(design)-1),
+               ncol=length(unique(design[2:nrow(design),1])))
+  rownames(L_spl)=c(unique(design[2:nrow(design),3]))
+  colnames(L_spl)=c(unique(design[2:nrow(design),1]))
+  for(q in 1:ncol(L_spl)){
+    count=1
+    for(p in 1:nrow(L_spl)){
+      if(design[(p+1),1]==colnames(L_spl)[q]){
+        L_spl[p,q]=count
+        count=count+1
+      }else{
+        L_spl[p,q]=0
+      }
+    }
+  }
+  
+  L_x1=matrix(nrow=length(L_inputs(mod)$Coefficient),ncol=ncol(L_x))
+  for(e in 1:ncol(L_x1)){
+    count=1
+    for(p in 1:nrow(L_spl)){
+      for(q in 1:ncol(L_spl)){
+        if(L_spl[p,q]>0){
+          if(L_spl[p,q]==1){
+            L_x1[p,e]=L_x[p,e]
+          }else{
+            pow=as.numeric(design[(1+p),2])
+            L_x1[p,e]=L_x[count,e]^pow
+          }
+          if(max(L_spl[,q])==p){
+            count=count+1
+          }
+        }
+      }
+    }
+  }
+  
+  
+  L1=rbind(1,L_x1)
+  
+  if(is.null(Est_Names)){
+    Est_Names=c(paste("Estimate",1:ncol(L_x)))
+  }
+  
+  
+  
+  s=summary(mod)
+  lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+  glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+  cox=ifelse("coxph"%in%class(mod),1,0)
+  rma_mv=ifelse("rma"%in%class(mod),1,0)
+  glm=ifelse("lm"%in%class(mod),1,0)
+  
+  if(glmmTMB==1){
+    coef_nam=c(rownames(summary(mod)$coefficients$cond))
+  }else if(cox==1){
+    coef_nam=c("(Intercept)",rownames(summary(mod)$coefficients))
+  }else if(rma_mv==1){
+    coef_nam=c(rownames(mod$beta))
+  }else{
+    coef_nam=c(rownames(summary(mod)$coefficients))
+  }
+  split_text=str_split(coef_nam, ":", simplify = TRUE)
+  split_bin=ifelse(split_text=="",0,1)
+  split_num=matrix(ncol=1,nrow=sum(rowSums(split_bin)==1))
+  
+  L=matrix(nrow=nrow(split_text),ncol=length(c(Est_Names)))
+  
+  for(e in 1:length(c(Est_Names))){
+    split_num=matrix(L1[,e])
+    for(p in 1:nrow(L)){
+      coef=split_text[p,]
+      mult=1
+      for(q in 1:nrow(split_num)){
+        for(r in 1:ncol(split_num)){
+          mult=mult*ifelse(split_text[q,r]%in%coef,as.numeric(split_num[q,1]),1)
+        }
+      }
+      L[p,e]=mult
+    }
+  }
+  row.names(L)=c(coef_nam)
+  
+  if(cox==1){
+    L=L[2:nrow(L),]
+  }
+  
+  return(L)
+  
+}
+
+
+
+#L_x is a P x E matrix of P regressor levels across E estimates 
+#intended to be used in conjunction with L_inputs to produce a model forecast
+
+#mod is a fitted model object from lm, glm, lmer, glmer,  glmmTMB, or coxph
+
+#Est_Names is E length vector of estimate names
+
+#Design is a matrix from L_designer
+
+#input_names is a vector of variable names for L_x connecting them to coefficients in mod
+
+#Intended to be used with L_Specify and Est_Mod for writing L matrix
+
+
+
+L_pred_any=function(L_x,
+                    mod,
+                    design,
+                    input_names,
+                    Est_Names=NULL){
+  
+  s=summary(mod)
+  lme4=ifelse("lmerMod"%in%c(class(mod))|"glmerMod"%in%c(class(mod)),1,0)
+  glmmTMB=ifelse("glmmTMB"%in%class(mod),1,0)
+  cox=ifelse("coxph"%in%class(mod),1,0)
+  rma_mv=ifelse("rma"%in%class(mod),1,0)
+  glm=ifelse("lm"%in%class(mod),1,0)
+  
+  if(glmmTMB==1){
+    coef_nam=c(rownames(summary(mod)$coefficients$cond))
+  }else if(cox==1){
+    coef_nam=c("(Intercept)",rownames(summary(mod)$coefficients))
+  }else if(rma_mv==1){
+    coef_nam=c(rownames(mod$beta))
+  }else{
+    coef_nam=c(rownames(summary(mod)$coefficients))
+  }
+  split_text=str_split(coef_nam, ":", simplify = TRUE)
+  split_bin=ifelse(split_text=="",0,1)
+  split_num=matrix(ncol=1,nrow=sum(rowSums(split_bin)==1))
+  
+  if(is.null(Est_Names)){
+    Est_Names=c(paste("Estimate",1:ncol(L_x)))
+  }
+  
+  
+  des=design
+  des[1,]=c("(Intercept)",1,NA,"")
+  
+  L_x1=rbind(1,L_x)
+  
+  if(ncol(split_text)>1){
+    L_main=matrix(nrow=nrow(split_text[split_text[,2]=="",]),
+                  ncol=ncol(L_x))
+  }else{
+    L_main=matrix(nrow=length(split_text),
+                  ncol=ncol(L_x))
+  }
+  
+  for(q in 1:ncol(L_main)){
+    for(p in 1:nrow(L_main)){
+      nam_p=des[p,1]
+      var_p=des[p,4]
+      x_p=L_x1[which(nam_p==input_names),q]
+      L_main[p,q]=ifelse(is.na(des[p,3]),x_p^as.numeric(des[p,2]),
+                         ifelse(x_p<as.numeric(des[p,3]),0,(x_p-as.numeric(des[p,3]))^as.numeric(des[p,2])))
+    }
+  }
+  
+  L2=matrix(nrow=nrow(split_text),ncol=length(c(Est_Names)))
+  
+  for(e in 1:length(c(Est_Names))){
+    split_num=matrix(L_main[,e])
+    for(p in 1:nrow(L2)){
+      coef=split_text[p,]
+      mult=1
+      for(q in 1:nrow(split_num)){
+        for(r in 1:ncol(split_num)){
+          mult=mult*ifelse(split_text[q,r]%in%coef,as.numeric(split_num[q,1]),1)
+        }
+      }
+      L2[p,e]=mult
+    }
+  }
+  row.names(L2)=c(coef_nam)
+  
+  if(cox==1){
+    L2=L2[2:nrow(L2),]
+  }
+  
+  return(L2)
 }
 
 
