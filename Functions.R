@@ -1455,7 +1455,7 @@ Est_Mod=function(mod=NA,
           if(is.null(xlim[[p]])){
             if(is.null(ylim[[p]])){
               h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group))+
-                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,coluor=NA)+
+                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour=NA)+
                 geom_line(aes(x=Time,y=y))+
                 xlab(xlab[[p]])+
                 ylab(ylab[[p]])+
