@@ -1455,7 +1455,7 @@ Est_Mod=function(mod=NA,
           if(is.null(xlim[[p]])){
             if(is.null(ylim[[p]])){
               h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group))+
-                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour=NA)+
+                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour="black")+
                 geom_line(aes(x=Time,y=y))+
                 xlab(xlab[[p]])+
                 ylab(ylab[[p]])+
@@ -1463,7 +1463,7 @@ Est_Mod=function(mod=NA,
                 scale_fill_grey()
             }else{
               h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group))+
-                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour=NA)+
+                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour="black")+
                 geom_line(aes(x=Time,y=y))+
                 xlab(xlab[[p]])+
                 ylab(ylab[[p]])+
@@ -1473,7 +1473,7 @@ Est_Mod=function(mod=NA,
           }else{
             if(is.null(ylim[[p]])){
               h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group))+
-                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour=NA)+
+                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour="black")+
                 geom_line(aes(x=Time,y=y))+
                 xlab(xlab[[p]])+
                 ylab(ylab[[p]])+
@@ -1482,7 +1482,7 @@ Est_Mod=function(mod=NA,
                 scale_fill_grey()
             }else{
               h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group))+
-                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour=NA)+
+                geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5,colour="black")+
                 geom_line(aes(x=Time,y=y))+
                 xlab(xlab[[p]])+
                 ylab(ylab[[p]])+
@@ -1494,7 +1494,7 @@ Est_Mod=function(mod=NA,
         }else{
           if(is.null(xlim[[p]])){
             h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group,col=Group,fill=Group))+
-              geom_ribbon(aes(x=Time,ymin=ll,ymax=ul),alpha=0.5,colour=NA)+
+              geom_ribbon(aes(x=Time,ymin=ll,ymax=ul),alpha=0.5,colour="black")+
               geom_line(aes(x=Time,y=y))+
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+
@@ -1503,7 +1503,7 @@ Est_Mod=function(mod=NA,
               scale_fill_grey()
           }else{
             h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group,col=Group,fill=Group))+
-              geom_ribbon(aes(x=Time,ymin=ll,ymax=ul),alpha=0.5,colour=NA)+
+              geom_ribbon(aes(x=Time,ymin=ll,ymax=ul),alpha=0.5,colour="black")+
               geom_line(aes(x=Time,y=y))+
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+
