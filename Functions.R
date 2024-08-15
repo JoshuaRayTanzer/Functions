@@ -1717,7 +1717,8 @@ Est_Mod=function(mod=NA,
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+
               ylim(ylim[[p]])+
-              xlim(xlim[[p]])
+              xlim(xlim[[p]])+ 
+              scale_fill_grey()
           }
         }else{
           if(is.null(ylim[[p]])&is.null(xlim[[p]])){
