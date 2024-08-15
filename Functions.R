@@ -1499,7 +1499,8 @@ Est_Mod=function(mod=NA,
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+
               ggtitle(main[[p]])+
-              ylim(0,1)
+              ylim(0,1)+
+              scale_fill_grey()
           }else{
             h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group,col=Group,fill=Group))+
               geom_ribbon(aes(x=Time,ymin=ll,ymax=ul),alpha=0.5,colour=NA)+
@@ -1508,7 +1509,8 @@ Est_Mod=function(mod=NA,
               ylab(ylab[[p]])+
               ggtitle(main[[p]])+
               ylim(0,1)+
-              xlim(xlim[[p]])
+              xlim(xlim[[p]])+
+              scale_fill_grey()
           }
         }
         print(h)
