@@ -1826,11 +1826,20 @@ inspect_mods=function(mod=NA,
     
     if(glmmTMB==1){
       res=resid(mod)
+      dpred=mod$frame
+      if(is.null(names(ranef(mod)$cond))){
+        dpred=dpred
+      }else{
+        dpred=dpred[,-c(which(names(dpred)%in%names(ranef(mod)$cond)))]
+      }
+      hat=as.matrix(dpred)%*%as.matrix(coefficients(summary(mod))$cond[,1])
+      
       fit=c(nrow(coefficients(summary(mod))$cond),
             AIC(mod),
             BIC(mod),
             -2*logLik(mod),
-            cor(fitted(mod),fitted(mod)+res)^2)
+            cor(hat,hat+res)^2)
+
       if(is.null(X)){
         X=mod$frame
         X=X[,2:ncol(X)]
@@ -2038,11 +2047,19 @@ inspect_mods=function(mod=NA,
       
       if(glmmTMB==1){
         res=resid(mod[[m]])
+        dpred=mod[[m]]$frame
+        if(is.null(names(ranef(mod[[m]])$cond))){
+          dpred=dpred
+        }else{
+          dpred=dpred[,-c(which(names(dpred)%in%names(ranef(mod[[m]])$cond)))]
+        }
+        hat=as.matrix(dpred)%*%as.matrix(coefficients(summary(mod[[m]]))$cond[,1])
+        
         fit[,m]=c(nrow(summary(mod[[m]])$coefficients$cond),
                   AIC(mod[[m]]),
                   BIC(mod[[m]]),
                   -2*logLik(mod[[m]]),
-                  cor(fitted(mod[[m]]),fitted(mod[[m]])+res)^2)
+                  cor(hat,hat+res)^2)
         if(X_flag==1){
           X[[m]]=mod[[m]]$frame
           X[[m]]=X[[m]][,2:ncol(X[[m]])]
