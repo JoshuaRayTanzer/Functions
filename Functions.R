@@ -1212,103 +1212,87 @@ Est_Mod=function(mod=NA,
         
         var_nam=c(names(model.frame(mod)[2:ncol(model.frame(mod))]))
         
-        split_2=split_text
+        var_ME=NULL
+        for(i in 1:nrow(split_bin)){
+          if(sum(split_bin[i,])==1){
+            var_ME=c(var_ME,split_text[i,1])
+          }
+        }
+        
+        X
+        var_ME
+        
+        formula(mod)
+        
+        Xnew=rep(NA,nrow(X))
+        for(i in 1:length(var_ME)){
+          for(j in 1:ncol(X)){
+            if(grepl(names(X)[j],var_ME[i])){
+              if(names(X)[j]==var_ME[i]){
+                Xnew=cbind(Xnew,X[j])
+              }else{
+                val=strsplit(c(names(X)[j],var_ME[i]),split="")
+                val1=val[[1]]
+                val2=val[[2]]
+                lev_val=paste(val2[(length(val1)+1):length(val2)],collapse="")
+                
+                X_keep=ifelse(X[j]==lev_val,1,0)
+                Xnew=cbind(Xnew,X_keep)
+              }
+            }
+          }
+        }
+        Xnew=Xnew[,2:ncol(Xnew)]
+        names(Xnew)=c(var_ME)
+        
+        Xnew2=rep(NA,nrow(Xnew))
         for(i in 1:nrow(split_text)){
-          for(j in 1:ncol(split_text)){
-            for(k in 1:length(var_nam)){
-              if(split_2[i,j]==""){
-                split_2[i,j]=""
-              }else{
-                split_2[i,j]=ifelse(grepl(var_nam[k],split_2[i,j])==T,
-                                    ifelse(var_nam[k]==split_2[i,j],split_2[i,j],
-                                           gsub(var_nam[k],'',split_2[i,j])),split_2[i,j])
+          columns=NULL
+          for(j in 1:length(var_ME)){
+            for(k in 1:ncol(split_text)){
+              if(split_text[i,k]==var_ME[j]){
+                columns=c(columns,j)
               }
             }
           }
-        }
-        
-        reg2=matrix(nrow=nrow(split_2),ncol=1)
-        X2=matrix(nrow=nrow(X),ncol=nrow(split_2))
-        X3=matrix(1,nrow=nrow(X),ncol=nrow(split_2))
-        for(q in 1:nrow(split_2)){
-          hold=c(split_2[q,])
-          hold2=ifelse(hold=="",NA,hold)
-          hold3=hold2[complete.cases(hold2)]
-          hold4=NULL
-          if(length(hold3)==1){
-            reg2[q,]=hold3
-            if(hold3%in%var_nam){
-              X2[,q]=X[,names(X)==hold3]
-            }else{
-              flag=0
-              for(i in 1:length(var_nam)){
-                flag=ifelse(grepl(var_nam[i],split_text[q,1]),i,flag)
-              }
-              X2[,q]=ifelse(X[,names(X)==var_nam[flag]]==hold3,1,0)
-            }
+          if(length(columns)==1){
+            X_keep=Xnew[,columns]
           }else{
-            for(i in 1:length(hold3)){
-              if(i==length(hold3)){
-                hold4=c(hold4,paste(hold4[i-1],hold3[i],sep=""))
+            for(j in 1:length(columns)){
+              this_col=columns[j]
+              if(which(this_col==columns)==1){
+                X_keep=Xnew[,this_col]
               }else{
-                hold4=c(hold4,paste(hold3[i],"_",sep=""))
-              }
-            }
-            reg2[q,]=hold4[i]
-          }
-        }
-        
-        count=ifelse(clust_present==1,length(var_nam)-1,length(var_nam))
-        
-        for(q in 1:ncol(X2)){
-          if(rowSums(split_bin)[q]==1){
-            X2[,q]=X2[,q]
-          }else{
-            X2[,q]=1
-            for(i in 1:count){
-              if(grepl(reg2[i,],reg2[q,])==T){
-                X2[,q]=X2[,q]*X2[,i]
+                X_keep=X_keep*Xnew[,this_col]
               }
             }
           }
+          Xnew2=cbind(Xnew2,X_keep)
         }
+        Xnew2=data.frame(Xnew2[,2:ncol(Xnew2)])
+        
+        
+        names(Xnew2)=c(coef_nam)
         
         time=model.frame(mod)[,1][,1]
         event=model.frame(mod)[,1][,2]
         
-        X2=cbind(X2,time,event)
-        
+        X2=cbind(Xnew2,time,event)
         if(clust_present==1){
           X2=cbind(X2,clust)
-          namer=c(reg2,"time","event","Clust")
-        }else{
-          namer=c(reg2,"time","event")
-        }
-        X2=data.frame(X2)
-        colnames(X2)=c(namer)
-        
-        
-        for(q in 1:nrow(reg2)){
-          if(q==1){
-            line=paste("Surv(time,event)~",reg2[q,],sep="")
-          }else if(q==nrow(reg2)){
-            if(clust_present==1){
-              line=paste(line,"+",reg2[q,],"+cluster(Clust)",sep="")
-            }else{
-              line=paste(line,"+",reg2[q,],sep="")
-            }
-          }else{
-            line=paste(line,"+",reg2[q,],sep="")
-          }
         }
         
+        line=paste(c(names(X2)[1:nrow(split_text)]),collapse="+")
+        line=paste("Surv(time,event)~",line,collapse="")
+        if(clust_present==1){
+          line=paste(line,"+cluster(clust)",sep="")
+        }
         out_mod=coxph(formula(line),data=X2)
-        
-        
         
         n_dat=t(L[,plot[[p]]])
         n_dat=data.frame(n_dat)
-        colnames(n_dat)=c(reg2)
+        colnames(n_dat)=c(coef_nam)
+        
         
         y1=survfit(out_mod,newdata=n_dat)$surv
         ll1=survfit(out_mod,newdata=n_dat)$lower
@@ -1831,7 +1815,7 @@ inspect_mods=function(mod=NA,
             BIC(mod),
             -2*logLik(mod),
             cor(predict(mod,re.form=NA),predict(mod,re.form=NA)+res)^2)
-
+      
       if(is.null(X)){
         X=mod$frame
         X=X[,2:ncol(X)]
