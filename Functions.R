@@ -1281,6 +1281,8 @@ Est_Mod=function(mod=NA,
         if(clust_present==1){
           X2=cbind(X2,clust)
         }
+
+        names(X2)[1:nrow(split_text)]=paste("X",1:nrow(split_text),sep="")
         
         line=paste(c(names(X2)[1:nrow(split_text)]),collapse="+")
         line=paste("Surv(time,event)~",line,collapse="")
