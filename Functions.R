@@ -1293,7 +1293,7 @@ Est_Mod=function(mod=NA,
         
         n_dat=t(L[,plot[[p]]])
         n_dat=data.frame(n_dat)
-        colnames(n_dat)=c(coef_nam)
+        colnames(n_dat)=c(names(X2)[1:nrow(split_text)])
         
         
         y1=survfit(out_mod,newdata=n_dat)$surv
