@@ -1295,7 +1295,7 @@ Est_Mod=function(mod=NA,
         n_dat=data.frame(n_dat)
         colnames(n_dat)=c(names(X2)[1:nrow(split_text)])
         
-        
+        CI_level=1-alpha
         y1=survfit(out_mod,newdata=n_dat,conf.int=CI_level)$surv
         ll1=survfit(out_mod,newdata=n_dat,conf.int=CI_level)$lower
         ul1=survfit(out_mod,newdata=n_dat,conf.int=CI_level)$upper
