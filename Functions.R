@@ -1296,10 +1296,11 @@ Est_Mod=function(mod=NA,
         colnames(n_dat)=c(names(X2)[1:nrow(split_text)])
         
         
-        y1=survfit(out_mod,newdata=n_dat)$surv
-        ll1=survfit(out_mod,newdata=n_dat)$lower
-        ul1=survfit(out_mod,newdata=n_dat)$upper
-        time1=survfit(out_mod,newdata=n_dat)$time
+        y1=survfit(out_mod,newdata=n_dat,conf.int=CI_level)$surv
+        ll1=survfit(out_mod,newdata=n_dat,conf.int=CI_level)$lower
+        ul1=survfit(out_mod,newdata=n_dat,conf.int=CI_level)$upper
+        time1=survfit(out_mod,newdata=n_dat,conf.int=CI_level)$time
+
         
         
         if(cumulative==T){
@@ -1329,6 +1330,11 @@ Est_Mod=function(mod=NA,
         gg_inf=data.frame(y,ll,ul,grp_names,time)
         names(gg_inf)=c("y","ll","ul","Group","Time")
         gg_inf$Group=factor(gg_inf$Group,levels=unique(as.character(gg_inf$Group)))
+
+        out$Cox_Estimates=c(gg_inf$y)
+        out$Cox_LL=c(gg_inf$ll)
+        out$Cox_UL=c(gg_inf$ul)
+        out$Cox_Group_ID=gg_inf$grp_names
         
       }else if(link=="Identity"|link=="identity"|link=="Ident"|link=="ident"){
         if(plot_type[p]=="X_Range"|plot_type[p]=="x_range"|plot_type[p]=="X_range"|plot_type[p]=="x_Range"){
