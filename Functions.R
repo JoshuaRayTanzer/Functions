@@ -1334,7 +1334,7 @@ Est_Mod=function(mod=NA,
         out$Cox_Estimates=c(gg_inf$y)
         out$Cox_LL=c(gg_inf$ll)
         out$Cox_UL=c(gg_inf$ul)
-        out$Cox_Group_ID=gg_inf$Group
+        out$Cox_Group_ID=c(gg_inf$Group)
         
       }else if(link=="Identity"|link=="identity"|link=="Ident"|link=="ident"){
         if(plot_type[p]=="X_Range"|plot_type[p]=="x_range"|plot_type[p]=="X_range"|plot_type[p]=="x_Range"){
