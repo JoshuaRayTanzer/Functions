@@ -1505,7 +1505,7 @@ Est_Mod=function(mod=NA,
               scale_fill_grey()
           }
         }
-        print(h)
+        out$Chart=h
       }else if(plot_type[p]=="Line"|plot_type[p]=="line"|plot_type[p]=="L"|plot_type[p]=="l"){
         scale=1:length(plot[[p]])
         gg_inf1=gg_inf
@@ -1584,7 +1584,7 @@ Est_Mod=function(mod=NA,
               ggtitle(main[[p]])
           }
         }
-        print(h)
+        out$Chart=h
       }else if(plot_type[p]=="Bar"|plot_type[p]=="bar"|plot_type[p]=="B"|plot_type[p]=="b"){
         gg_inf1=gg_inf
         gg_inf1[,1]=as.numeric(gg_inf1[,1])
@@ -1661,7 +1661,7 @@ Est_Mod=function(mod=NA,
               ggtitle(main[[p]])
           }
         }
-        print(h)
+        out$Chart=h
       }else if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
         gg_inf1=gg_inf
         gg_inf1[,1]=as.numeric(gg_inf1[,1])
@@ -1755,7 +1755,7 @@ Est_Mod=function(mod=NA,
             
           }
         }
-        print(h)
+        out$Chart=h
       }else{
         blurb="Error: Only bar charts and line charts currently supported"
         blurb=data.frame(blurb)
@@ -1932,13 +1932,13 @@ inspect_mods=function(mod=NA,
                   geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
                   xlab(names(X)[p])+
                   ggtitle(paste("Plot of Residuals for",names(X)[p]),subtitle="Mean +/- SD")
-                print(h)
+                out$Chart=h
               }else{
                 h=ggplot(gg_inf,aes(y=Residual,x=x))+
                   geom_boxplot()+
                   xlab(names(X)[p])+
                   ggtitle(paste("Plot of Residuals for",names(X)[p]))
-                print(h)
+                out$Chart=h
               }
             }else{
               if(is.numeric(gg_inf[,2])){
@@ -1958,13 +1958,13 @@ inspect_mods=function(mod=NA,
                   geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
                   xlab(names(X)[p])+
                   ggtitle(paste("Plot of Residuals for",names(X)[p]),subtitle="Mean +/- SD")
-                print(h)
+                out$Chart=h
               }else{
                 h=ggplot(gg_inf,aes(y=Residual,x=x))+
                   geom_boxplot()+
                   xlab(names(X)[p])+
                   ggtitle(paste("Plot of Residuals for",names(X)[p]))
-                print(h)
+                out$Chart=h
               }
             }
             
@@ -2139,13 +2139,13 @@ inspect_mods=function(mod=NA,
                     geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
                     xlab(names(X1)[p])+
                     ggtitle(paste("Plot of Residuals for",names(X1)[p]),subtitle="Mean +/- SD")
-                  print(h)
+                  out$Chart=h
                 }else{
                   h=ggplot(gg_inf,aes(y=Residual,x=x))+
                     geom_boxplot()+
                     xlab(names(X1)[p])+
                     ggtitle(paste("Plot of Residuals for",names(X1)[p]))
-                  print(h)
+                  out$Chart=h
                 }
               }else{
                 if(is.numeric(gg_inf[,2])){
@@ -2166,13 +2166,13 @@ inspect_mods=function(mod=NA,
                     geom_ribbon(aes(x=rib$x_val,ymin=rib$lower2,ymax=rib$upper2),alpha=0.3)+
                     xlab(names(X1)[p])+
                     ggtitle(paste("Plot of Residuals for",names(X1)[p]),subtitle="Mean +/- SD")
-                  print(h)
+                  out$Chart=h
                 }else{
                   h=ggplot(gg_inf,aes(y=Residual,x=x))+
                     geom_boxplot()+
                     xlab(names(X1)[p])+
                     ggtitle(paste("Plot of Residuals for",names(X1)[p]))
-                  print(h)
+                  out$Chart=h
                 }
               }
               if(p==ncol(X1)&m==num_mods){
@@ -4708,7 +4708,7 @@ df_L=function(mod,
           ylab("Increase or Decrease in Estimate (%)")+
           ggtitle(paste("Influence of Individual Datapoints on",ggnam[p]))
       }
-      print(h)
+      out$Chart=h
       readline("Press enter to proceed to the next plot")
     }
     
