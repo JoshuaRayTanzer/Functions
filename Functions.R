@@ -3984,6 +3984,8 @@ desc_clust_emp=function(data,
 #an L matrix for the zer inflation model
 
 
+
+
 df_L=function(mod,
               Est_Names=NULL,
               L=NULL,
@@ -3999,6 +4001,7 @@ df_L=function(mod,
     env_flag=0
   }
   
+  out=list()
   
   s=summary(mod)
   lme4=ifelse("lmerMod"%in%c(class(mod)),1,0)
@@ -4709,6 +4712,7 @@ df_L=function(mod,
           ggtitle(paste("Influence of Individual Datapoints on",ggnam[p]))
       }
       out$Chart=h
+      print(h)
       readline("Press enter to proceed to the next plot")
     }
     
@@ -4750,8 +4754,7 @@ df_L=function(mod,
   
   print(noquote(blurb))
   
-  out=list(df_L=dfl)
-  
+  out$df_L=dfl
   if(env_flag==1){
     warn = getOption("warn")
     options(warn=-1)
@@ -4761,6 +4764,8 @@ df_L=function(mod,
   
   return(dfl)
 }
+
+
 
 #Works in base R
 
