@@ -1281,7 +1281,7 @@ Est_Mod=function(mod=NA,
         if(clust_present==1){
           X2=cbind(X2,clust)
         }
-
+        
         names(X2)[1:nrow(split_text)]=paste("X",1:nrow(split_text),sep="")
         
         line=paste(c(names(X2)[1:nrow(split_text)]),collapse="+")
@@ -1300,7 +1300,7 @@ Est_Mod=function(mod=NA,
         ll1=survfit(out_mod,newdata=n_dat,conf.int=CI_level)$lower
         ul1=survfit(out_mod,newdata=n_dat,conf.int=CI_level)$upper
         time1=survfit(out_mod,newdata=n_dat,conf.int=CI_level)$time
-
+        
         
         
         if(cumulative==T){
@@ -1330,7 +1330,7 @@ Est_Mod=function(mod=NA,
         gg_inf=data.frame(y,ll,ul,grp_names,time)
         names(gg_inf)=c("y","ll","ul","Group","Time")
         gg_inf$Group=factor(gg_inf$Group,levels=unique(as.character(gg_inf$Group)))
-
+        
         out$Cox_Estimates=c(gg_inf$y)
         out$Cox_LL=c(gg_inf$ll)
         out$Cox_UL=c(gg_inf$ul)
@@ -1453,6 +1453,10 @@ Est_Mod=function(mod=NA,
                 ylab(ylab[[p]])+
                 ylim(0,1)+ 
                 scale_fill_grey()
+              if(exists("h")){
+                plot(h)
+              }
+              
             }else{
               h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group))+
                 geom_ribbon(aes(x=Time,ymin=ll,ymax=ul,fill=Group),alpha=0.5)+
@@ -1461,6 +1465,10 @@ Est_Mod=function(mod=NA,
                 ylab(ylab[[p]])+
                 ylim(ylim[[p]])+ 
                 scale_fill_grey()
+              if(exists("h")){
+                plot(h)
+              }
+              
             }
           }else{
             if(is.null(ylim[[p]])){
@@ -1481,6 +1489,10 @@ Est_Mod=function(mod=NA,
                 ylim(ylim[[p]])+
                 xlim(xlim[[p]])+ 
                 scale_fill_grey()
+              if(exists("h")){
+                plot(h)
+              }
+              
             }
           }
         }else{
@@ -1493,6 +1505,10 @@ Est_Mod=function(mod=NA,
               ggtitle(main[[p]])+
               ylim(0,1)+
               scale_fill_grey()
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else{
             h=ggplot(data=gg_inf,aes(x=Time,y=y,group=Group,fill=Group))+
               geom_ribbon(aes(x=Time,ymin=ll,ymax=ul),alpha=0.5)+
@@ -1503,9 +1519,14 @@ Est_Mod=function(mod=NA,
               ylim(0,1)+
               xlim(xlim[[p]])+
               scale_fill_grey()
+            if(exists("h")){
+              plot(h)
+            }
+            
           }
         }
         out$Chart=h
+        
       }else if(plot_type[p]=="Line"|plot_type[p]=="line"|plot_type[p]=="L"|plot_type[p]=="l"){
         scale=1:length(plot[[p]])
         gg_inf1=gg_inf
@@ -1526,6 +1547,10 @@ Est_Mod=function(mod=NA,
               geom_line(aes(x=scale,y=y))+
               xlab(xlab[[p]])+
               ylab(ylab[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else if(is.null(ylim[[p]])){
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
               geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
@@ -1533,6 +1558,10 @@ Est_Mod=function(mod=NA,
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+
               xlim(xlim[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else if(is.null(xlim[[p]])){
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
               geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
@@ -1540,6 +1569,10 @@ Est_Mod=function(mod=NA,
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+
               ylim(ylim[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else{
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
               geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
@@ -1548,6 +1581,10 @@ Est_Mod=function(mod=NA,
               ylab(ylab[[p]])+
               ylim(ylim[[p]])+
               xlim(xlim[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }
         }else{
           if(is.null(ylim[[p]])&is.null(xlim[[p]])){
@@ -1557,6 +1594,10 @@ Est_Mod=function(mod=NA,
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+
               ggtitle(main[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else if(is.null(ylim[[p]])){
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
               geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
@@ -1565,6 +1606,10 @@ Est_Mod=function(mod=NA,
               ylab(ylab[[p]])+
               xlim(xlim[[p]])+
               ggtitle(main[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else if(is.null(xlim[[p]])){
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
               geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
@@ -1573,6 +1618,10 @@ Est_Mod=function(mod=NA,
               ylab(ylab[[p]])+
               ylim(ylim[[p]])+
               ggtitle(main[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else{
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=1))+
               geom_ribbon(aes(x=scale,ymin=ll,ymax=ul),fill="gray70")+
@@ -1582,9 +1631,15 @@ Est_Mod=function(mod=NA,
               ylim(ylim[[p]])+
               xlim(xlim[[p]])+
               ggtitle(main[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }
         }
         out$Chart=h
+        
+        
       }else if(plot_type[p]=="Bar"|plot_type[p]=="bar"|plot_type[p]=="B"|plot_type[p]=="b"){
         gg_inf1=gg_inf
         gg_inf1[,1]=as.numeric(gg_inf1[,1])
@@ -1603,6 +1658,10 @@ Est_Mod=function(mod=NA,
               geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
               xlab(xlab[[p]])+
               ylab(ylab[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else if(is.null(xlim[[p]])){
             h=ggplot(gg_inf1)+
               geom_bar(aes(x=grp_names,y=y),stat="Identity")+
@@ -1610,6 +1669,10 @@ Est_Mod=function(mod=NA,
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+
               ylim(ylim[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else if(is.null(ylim[[p]])){
             h=ggplot(gg_inf1)+
               geom_bar(aes(x=grp_names,y=y),stat="Identity")+
@@ -1617,6 +1680,10 @@ Est_Mod=function(mod=NA,
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+
               xlim(xlim[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else{
             h=ggplot(gg_inf1)+
               geom_bar(aes(x=grp_names,y=y),stat="Identity")+
@@ -1625,6 +1692,10 @@ Est_Mod=function(mod=NA,
               ylab(ylab[[p]])+
               ylim(ylim[[p]])+
               xlim(xlim[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }
         }else{
           if(is.null(xlim[[p]])&is.null(ylim[[p]])){
@@ -1634,6 +1705,10 @@ Est_Mod=function(mod=NA,
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+
               ggtitle(main[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else if(is.null(xlim[[p]])){
             h=ggplot(gg_inf1)+
               geom_bar(aes(x=grp_names,y=y),stat="Identity")+
@@ -1642,6 +1717,10 @@ Est_Mod=function(mod=NA,
               ylab(ylab[[p]])+
               ylim(ylim[[p]])+
               ggtitle(main[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else if(is.null(ylim[[p]])){
             h=ggplot(gg_inf1)+
               geom_bar(aes(x=grp_names,y=y),stat="Identity")+
@@ -1650,6 +1729,10 @@ Est_Mod=function(mod=NA,
               ylab(ylab[[p]])+
               xlim(xlim[[p]])+
               ggtitle(main[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }else{
             h=ggplot(gg_inf1)+
               geom_bar(aes(x=grp_names,y=y),stat="Identity")+
@@ -1659,9 +1742,15 @@ Est_Mod=function(mod=NA,
               ylim(ylim[[p]])+
               xlim(xlim[[p]])+
               ggtitle(main[[p]])
+            if(exists("h")){
+              plot(h)
+            }
+            
           }
         }
         out$Chart=h
+        
+        
       }else if(plot_type=="X_Range"|plot_type=="x_range"|plot_type=="X_range"|plot_type=="x_Range"){
         gg_inf1=gg_inf
         gg_inf1[,1]=as.numeric(gg_inf1[,1])
@@ -1683,6 +1772,10 @@ Est_Mod=function(mod=NA,
               xlab(xlab[[p]])+
               ylab(ylab[[p]])+ 
               scale_fill_grey()
+            if(exists("h")){
+              plot(h)
+            }
+            
             
           }else if(is.null(ylim[[p]])){
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
@@ -1692,6 +1785,10 @@ Est_Mod=function(mod=NA,
               ylab(ylab[[p]])+
               xlim(xlim[[p]])+ 
               scale_fill_grey()
+            if(exists("h")){
+              plot(h)
+            }
+            
             
           }else if(is.null(xlim[[p]])){
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
@@ -1701,6 +1798,10 @@ Est_Mod=function(mod=NA,
               ylab(ylab[[p]])+
               ylim(ylim[[p]])+ 
               scale_fill_grey()
+            if(exists("h")){
+              plot(h)
+            }
+            
             
           }else{
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
@@ -1711,6 +1812,10 @@ Est_Mod=function(mod=NA,
               ylim(ylim[[p]])+
               xlim(xlim[[p]])+ 
               scale_fill_grey()
+            if(exists("h")){
+              plot(h)
+            }
+            
           }
         }else{
           if(is.null(ylim[[p]])&is.null(xlim[[p]])){
@@ -1721,6 +1826,9 @@ Est_Mod=function(mod=NA,
               ylab(ylab[[p]])+
               ggtitle(main[[p]])+ 
               scale_fill_grey()
+            if(exists("h")){
+              plot(h)
+            }
             
           }else if(is.null(ylim[[p]])){
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
@@ -1731,6 +1839,9 @@ Est_Mod=function(mod=NA,
               xlim(xlim[[p]])+
               ggtitle(main[[p]])+ 
               scale_fill_grey()
+            if(exists("h")){
+              plot(h)
+            }
             
           }else if(is.null(xlim[[p]])){
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
@@ -1741,6 +1852,9 @@ Est_Mod=function(mod=NA,
               ylim(ylim[[p]])+
               ggtitle(main[[p]])+ 
               scale_fill_grey()
+            if(exists("h")){
+              plot(h)
+            }
             
           }else{
             h=ggplot(data=gg_inf1,aes(x=scale,y=y,group=Group))+
@@ -1752,10 +1866,15 @@ Est_Mod=function(mod=NA,
               xlim(xlim[[p]])+
               ggtitle(main[[p]])+ 
               scale_fill_grey()
+            if(exists("h")){
+              plot(h)
+            }
             
           }
         }
         out$Chart=h
+        
+        
       }else{
         blurb="Error: Only bar charts and line charts currently supported"
         blurb=data.frame(blurb)
@@ -1765,9 +1884,10 @@ Est_Mod=function(mod=NA,
       } 
     } 
   }
+  
   return(out)
+  
 }
-
 
 
 #Works in base r
