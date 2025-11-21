@@ -3349,16 +3349,14 @@ Plot_Dist=function(X,
   
   X=c(X)[complete.cases(c(X))]
   
-  
-  non_zero=ifelse(min(X)<0,F,T)
-  non_neg=ifelse(non_zero==T&min(X)==0,T,F)
+  non_neg=ifelse(min(X)<0,F,T)
   lim_1=ifelse(max(X)>1,F,T)
   int=ifelse(is.integer(X)==T,T,F)
   bin=ifelse(length(names(table(X)))==2,ifelse(sum(c(names(table(X)))==c("0","1"))==2,T,F),F)
   
   nrm=c("Normal")
-  exp=ifelse(non_zero==T,"Exponential",NA)
-  gam=ifelse(non_zero==T,"Gamma",NA)
+  exp=ifelse(non_neg==T,"Exponential",NA)
+  gam=ifelse(non_neg==T,"Gamma",NA)
   pois=ifelse(non_neg==T&int==T,"Poisson",NA)
   nb=ifelse(non_neg==T&int==T,"Negative Binomial",NA)
   b_binom=ifelse(lim_1==T&non_neg==T&bin==F,c("Beta-Binomial"),NA)
@@ -4880,6 +4878,7 @@ df_L=function(mod,
     options(warn=-1)
     suppressMessages(library(EnvStats))
     options(warn=warn)
+    library(EnvStats)
   }
   
   return(dfl)
