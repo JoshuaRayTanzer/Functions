@@ -5374,7 +5374,7 @@ Est_Mod_MI=function(mods,
   if(length(diff)==2){
     
     
-    prob=2*pt(-t,df)
+    prob=2*pt(-abs(t),df)
     if(link=="Identity"|link=="identity"|link=="Ident"|link=="ident"){
       if(ncol(table)!=length(Est_Names)){
         lab1=paste("estimate ",diff[1],sep="")
