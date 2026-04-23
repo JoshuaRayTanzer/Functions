@@ -5247,7 +5247,222 @@ L_pred_any=function(L_x,
 }
 
 
+Est_Mod_MI=function(mods,
+                    L,
+                    Est_Names=NULL,
+                    plot=NULL,
+                    diff=NA,
+                    link="Identity",
+                    xlab=NULL,
+                    ylab=NULL,
+                    ylim=NULL){
+  
+  L_view=L
+  if(is.null(Est_Names)){
+    colnames(L_view)=c(1:ncol(L))
+  }else{
+    colnames(L_view)=c(Est_Names)
+  }
+  rownames(L_view)=c(names(coefficients(mods[[4]][[1]])))
+  
+  blurb="Input L Matrix of Estimates"
+  blurb=data.frame(blurb)
+  colnames(blurb)=NULL
+  row.names(blurb)=c("")
+  
+  print_L=L_view
+  print(blurb)
+  print(print_L)
 
+  
+  beta=se=NULL
+  for(m in 1:length(mods[[4]])){
+    mod=mods[[4]][[m]]
+    beta=rbind(beta,c(t(L)%*%coefficients(mod)))
+    se=rbind(se,sqrt(diag(t(L)%*%vcov(mod)%*%L)))
+  }
+  bar_pe=colMeans(beta)
+  bar_se=colMeans(se^2)
+  v=diag(var(beta))
+  v_tot=bar_se+v+v/length(mods[[4]])
+  t=bar_pe/sqrt(v_tot)
+  df=(length(mods[[4]])-1)*(1+(1/(length(mods[[4]])+1))*(bar_se/v))^2
+  LL=bar_pe+qt(0.025,df)*sqrt(v_tot)
+  UL=bar_pe+qt(0.975,df)*sqrt(v_tot)
+  
+  if(link=="Identity"){
+    table=rbind(c(bar_pe),
+                c(sqrt(v_tot)),
+                c(LL),
+                c(UL))
+    
+    table=data.frame(round(table,2))
+    
+    row.names(table)=c("Point Estimate",
+                       "Standard Error",
+                       "95% CI Lower Limit",
+                       "95% CI Upper Limit")
+    if(is.null(Est_Names)){
+      colnames(table)=c(1:ncol(table))
+    }else{
+      colnames(table)=c(Est_Names)
+    }
+  }else if(link=="logit"|link=="Logit"){
+    table=rbind(c(exp(bar_pe)/(1+exp(bar_pe))),
+                c(exp(LL)/(1+exp(LL))),
+                c(exp(UL)/(1+exp(UL))))
+    
+    table=data.frame(round(table,2))
+    row.names(table)=c("Point Estimate",
+                       "95% CI Lower Limit",
+                       "95% CI Upper Limit")
+    if(is.null(Est_Names)){
+      colnames(table)=c(1:ncol(table))
+    }else{
+      colnames(table)=c(Est_Names)
+    }
+  }
+  print(table)
+  
+  if(is.null(Est_Names)){
+    grp_names=c(paste("Estimate",1:ncol(table),sep=" "))
+  }else{
+    grp_names=c(Est_Names)
+  }
+  
+  if(link=="Identity"){
+    gg_inf=data.frame(y=bar_pe,ll=LL,ul=UL,grp_names=grp_names)
+  }else if(link=="Logit"|link=="logit"){
+    gg_inf=data.frame(y=exp(bar_pe)/(1+exp(bar_pe))*100,ll=exp(LL)/(1+exp(LL))*100,ul=exp(UL)/(1+exp(UL))*100,grp_names=grp_names)
+  }
+  
+  flag=sum(ifelse(is.na(diff),0,ifelse(max(diff)>ncol(L),1,0)))
+  
+  if(flag!=0){
+    blurb="Error: To test the difference between two estimates, two column numbers of the L matrix must be specified"
+    blurb=data.frame(blurb)
+    colnames(blurb)=NULL
+    row.names(blurb)=c("")
+    print(blurb)
+  }
+  
+  if(length(diff)==2){
+    L_delta=L[,diff[1]]-L[,diff[2]]
+    beta_delta=se_delta=NULL
+    for(m in 1:length(mods[[4]])){
+      mod=mods[[4]][[m]]
+      beta_delta=rbind(beta_delta,c(L_delta%*%coefficients(mod)))
+      se_delta=rbind(se_delta,sqrt(diag(t(L_delta)%*%vcov(mod)%*%L_delta)))
+    }
+    bar_pe=colMeans(beta_delta)
+    est_delta=bar_pe
+    bar_se=colMeans(se_delta^2)
+    v=diag(var(beta_delta))
+    v_tot=bar_se+v+v/length(mods[[4]])
+    t=bar_pe/sqrt(v_tot)
+    df=round((length(mods[[4]])-1)*(1+(1/(length(mods[[4]])+1))*(bar_se/v))^2,2)
+    
+  }else if(is.na(diff)){""}else{
+    blurb="Error: To test the difference between two estimates, two column numbers of the L matrix must be specified"
+    blurb=data.frame(blurb)
+    colnames(blurb)=NULL
+    row.names(blurb)=c("")
+    print(blurb)
+  }
+  
+  
+  if(length(diff)==2){
+    
+    
+    prob=2*pt(-t,df)
+    if(link=="Identity"|link=="identity"|link=="Ident"|link=="ident"){
+      if(ncol(table)!=length(Est_Names)){
+        lab1=paste("estimate ",diff[1],sep="")
+      }else{
+        lab1=paste(Est_Names[diff[1]],sep="")
+      }
+      if(ncol(table)!=length(Est_Names)){
+        lab2=paste("estimate ",diff[2],sep="")
+      }else{
+        lab2=paste(Est_Names[diff[2]],sep="")
+      }
+      
+      
+      blurb=paste("Difference between ",lab1," and ",lab2,
+                  " = ",round(est_delta,2),", t(",df,") = ",round(t,2),", p ",
+                  ifelse(prob<0.001, "< 0.001",paste("= ",round(prob,3)))
+                  ,sep="")
+      blurb=data.frame(blurb)
+      colnames(blurb)=NULL
+      row.names(blurb)=c("")
+      
+      print(blurb)
+    }else{
+      if(ncol(table)!=length(Est_Names)){
+        lab1=paste("estimate ",diff[1],sep="")
+      }else{
+        lab1=paste(Est_Names[diff[1]],sep="")
+      }
+      if(ncol(table)!=length(Est_Names)){
+        lab2=paste("estimate ",diff[2],sep="")
+      }else{
+        lab2=paste(Est_Names[diff[2]],sep="")
+      }
+      
+      blurb=paste("Ratio of ",lab1," and ",lab2,
+                  " = ",round(exp(est_delta),2),", t(",df,") = ",round(t,2),", p ",
+                  ifelse(prob<0.001, "< 0.001",paste("= ",round(prob,3)))
+                  ,sep="")
+      blurb=data.frame(blurb)
+      colnames(blurb)=NULL
+      row.names(blurb)=c("")
+      
+      print(blurb)
+    }
+  }
+  
+  if(is.null(plot)==F){
+    if(is.null(xlab)){
+      xlab=""
+    }
+    if(is.null(ylab)){
+      ylab="Outcome Percent"
+    }
+    if(is.null(ylim)){
+      if(link=="Identity"){
+        h=ggplot(gg_inf[plot,])+
+          geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+          geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+          xlab(xlab)+
+          ylab(ylab)+
+          scale_fill_grey()
+        
+      }else if(link=="Logit"|link=="logit"){
+        ylim=c(0,100)
+        h=ggplot(gg_inf[plot,])+
+          geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+          geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+          xlab(xlab)+
+          ylab(ylab)+
+          ylim(ylim)+ 
+          scale_fill_grey()
+      }
+    }else{
+      h=ggplot(gg_inf[plot,])+
+        geom_bar(aes(x=grp_names,y=y),stat="Identity")+
+        geom_errorbar(aes(x=grp_names,ymin=ll,ymax=ul),width=.2)+
+        xlab(xlab)+
+        ylab(ylab)+
+        scale_fill_grey()
+      
+    }
+    
+    if(exists("h")){
+      plot(h)
+    }
+    
+  }
+}
 
 
 
